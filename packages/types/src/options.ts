@@ -18,6 +18,8 @@ export interface InitOptions
   throttleDelayTime?: number
   trackDsn?: string
   maxDuplicateCount?: number
+  /** 隐私脱敏开关（默认开）：遮蔽手机号/身份证/卡号/凭证，作用于 DOM 文本/console/HTTP body 三入口 */
+  enablePrivacyMask?: boolean
   /** 性能采集开关（默认开，false 关闭 web-performance 采集） */
   performance?: boolean
   /** 慢资源判定阈值 ms（默认 300），透传给 web-performance RT */

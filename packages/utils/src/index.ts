@@ -42,3 +42,6 @@ export * from './helpers'
 
 // Parser Utilities
 export * from './parser'
+
+// Privacy Masking
+export * from './mask'

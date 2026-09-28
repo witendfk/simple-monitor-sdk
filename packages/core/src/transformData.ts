@@ -8,7 +8,7 @@ import {
   IBreadcrumb,
   ReportDataType,
 } from '@simple-monitor/types'
-import { getLocationHref, getTimestamp, interceptStr } from '@simple-monitor/utils'
+import { getLocationHref, getTimestamp, interceptStr, mask } from '@simple-monitor/utils'
 import { getRealPath } from './errorId'
 
 /**
@@ -141,9 +141,24 @@ export function resourceTransform(target: ResourceErrorTarget): ReportDataType {
   }
 }
 
+/** 单个 console 参数的安全序列化：脱敏 + 截断 200 字符（业务常 console 打印凭证/用户数据） */
+function safeArg(arg: unknown): string {
+  let s: string
+  if (typeof arg === 'string') {
+    s = arg
+  } else {
+    try {
+      s = JSON.stringify(arg) ?? String(arg)
+    } catch {
+      s = String(arg)
+    }
+  }
+  return interceptStr(mask(s), 200)
+}
+
 /**
  * Console 集成 - 将 console 调用写入面包屑（受 breadcrumb 所在 client 的配置控制）。
- * breadcrumb 参数注入（M1：不再隐式引用模块单例）。
+ * breadcrumb 参数注入（M1：不再隐式引用模块单例）；args 逐个脱敏+截断。
  */
 export function handleConsole(data: TriggerConsole, breadcrumb: IBreadcrumb): void {
   breadcrumb.push({
@@ -151,7 +166,7 @@ export function handleConsole(data: TriggerConsole, breadcrumb: IBreadcrumb): vo
     category: breadcrumb.getCategory(BreadCrumbTypes.CONSOLE),
     data: {
       level: data.level,
-      args: data.args,
+      args: data.args.map(safeArg),
     },
     level: SeverityUtils.fromString(data.level),
     time: getTimestamp(),

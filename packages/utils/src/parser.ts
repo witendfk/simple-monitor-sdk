@@ -1,10 +1,14 @@
 import { ErrorTypes } from '@simple-monitor/types'
 import { getLocationHref } from './helpers'
 import { getTimestamp } from './time'
+import { interceptStr } from './string'
+import { mask } from './mask'
 import { ReportDataType, Severity } from '@simple-monitor/types'
 
 /**
- * 返回包含id、class、innerTextde字符串的标签
+ * 返回包含 id、class、innerText 的标签字符串（面包屑点击采集用）。
+ * innerText 经过脱敏（手机号/身份证/卡号/凭证）+ 截断（50 字符）——
+ * 点击的元素文本常含用户敏感数据，原文上报是隐私事故（旧实现原样输出却注释"脱敏"，已修复）。
  * @param target html节点
  */
 export function htmlElementAsString(target: HTMLElement): string | null {
@@ -16,7 +20,7 @@ export function htmlElementAsString(target: HTMLElement): string | null {
   classNames = classNames !== '' ? ` class="${classNames}"` : ''
   const id = target.id ? ` id="${target.id}"` : ''
   const innerText = target.innerText
-  return `<${tagName}${id}${classNames !== '' ? classNames : ''}>${innerText}</${tagName}>`
+  return `<${tagName}${id}${classNames !== '' ? classNames : ''}>${interceptStr(mask(innerText || ''), 50)}</${tagName}>`
 }
 
 /**

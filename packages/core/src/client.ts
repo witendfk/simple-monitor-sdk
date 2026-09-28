@@ -17,7 +17,7 @@ import { Breadcrumb } from './breadcrumb'
 import { Options } from './options'
 import { TransportData } from './transportData'
 import { logToClient } from './external'
-import { logger } from '@simple-monitor/utils'
+import { logger, setPrivacyMaskEnabled } from '@simple-monitor/utils'
 
 export class MonitorClient {
   /** 事件总线：采集器 trigger，处理器 subscribe */
@@ -57,6 +57,8 @@ export class MonitorClient {
       return false
     }
     this.flags.bindOptions(options)
+    // 隐私底线全局统一（utils 模块级开关）：默认开，显式传 false 才关
+    setPrivacyMaskEnabled(options.enablePrivacyMask !== false)
     this.breadcrumb.bindOptions(options)
     logger.bindOptions(options.debug)
     this.transport.bindOptions(options)

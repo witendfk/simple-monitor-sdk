@@ -16,6 +16,7 @@ import {
   replaceOld,
   getTimestamp,
   interceptStr,
+  mask,
   throttle,
   htmlElementAsString,
   getLocationHref,
@@ -127,7 +128,7 @@ export function xhrReplace(client: MonitorClient): void {
         const monitorXhr = this.monitor_xhr
         if (monitorXhr) {
           const body = args[0]
-          monitorXhr.reqData = typeof body === 'string' ? interceptStr(body, 2048) : ''
+          monitorXhr.reqData = typeof body === 'string' ? interceptStr(mask(body), 2048) : ''
           this.addEventListener('readystatechange', () => {
             if (this.readyState === 4) {
               completeXhr(this, client)
@@ -148,7 +149,7 @@ function safeResponseText(xhr: XMLHttpRequest): string {
   try {
     const responseType = xhr.responseType
     if (responseType === '' || responseType === 'text') {
-      return interceptStr(String(xhr.responseText ?? ''), 2048)
+      return interceptStr(mask(String(xhr.responseText ?? '')), 2048)
     }
     return `[${responseType}]`
   } catch {
@@ -216,7 +217,7 @@ export function fetchReplace(client: MonitorClient): void {
                     method,
                     status: res.status,
                     reqData: interceptStr(
-                      typeof requestInit?.body === 'string' ? requestInit.body : '',
+                      mask(typeof requestInit?.body === 'string' ? requestInit.body : ''),
                       2048
                     ),
                     sTime,
@@ -274,7 +275,7 @@ function readResponseBody(res: Response, consume: (text: string) => void): void 
     res
       .clone()
       .text()
-      .then((text: string) => consume(interceptStr(text, 2048)))
+      .then((text: string) => consume(interceptStr(mask(text), 2048)))
       .catch(() => {
         /* body 已被业务消费/流错误：放弃采集 */
       })
