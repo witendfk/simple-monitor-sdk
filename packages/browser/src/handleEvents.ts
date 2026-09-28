@@ -14,6 +14,7 @@ import { resourceTransform, httpTransform } from '@simple-monitor/core'
 import { handleConsole } from '@simple-monitor/core'
 import type { MonitorClient } from '@simple-monitor/core'
 import type { ResourceErrorTarget, MonitorHttp } from '@simple-monitor/types'
+import { viewIdFromUrl } from './viewId'
 
 /**
  * 订阅 JS 运行时错误（window error 事件分流后的代码错误通道）
@@ -30,6 +31,8 @@ export function handleError(client: MonitorClient): void {
       if (!parsed) return
 
       parsed.type = ErrorTypes.JAVASCRIPT_ERROR
+      // viewId 在捕获时刻打标：批量上报（5s 窗口）内的路由切换不影响错误归因（M3）
+      parsed.viewId = client.viewId || undefined
 
       client.breadcrumb.push({
         type: BreadCrumbTypes.CODE_ERROR,
@@ -56,6 +59,7 @@ export function handleResourceError(client: MonitorClient): void {
       if (client.isSilent(EventTypes.RESOURCE_ERROR_EVENT)) return
 
       const parsed = resourceTransform(data)
+      parsed.viewId = client.viewId || undefined
 
       client.breadcrumb.push({
         type: BreadCrumbTypes.RESOURCE,
@@ -89,6 +93,7 @@ export function handleUnhandledRejection(client: MonitorClient): void {
       if (!parsed) return
 
       parsed.type = ErrorTypes.PROMISE_ERROR
+      parsed.viewId = client.viewId || undefined
 
       client.breadcrumb.push({
         type: BreadCrumbTypes.UNHANDLEDREJECTION,
@@ -213,6 +218,9 @@ export function handleHistoryEvent(client: MonitorClient): void {
           // 用户钩子报错不影响采集流程
         }
       }
+
+      // 更新路由视图标识：此后的错误归因到新视图（M3）
+      client.viewId = viewIdFromUrl(data.to)
 
       client.breadcrumb.push({
         type: BreadCrumbTypes.ROUTE,

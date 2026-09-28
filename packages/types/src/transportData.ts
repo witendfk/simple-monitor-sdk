@@ -53,6 +53,8 @@ export interface ReportDataType {
   componentName?: string
   propsData?: any
   customTag?: string
+  /** SPA 路由视图标识（采集时刻打标，M3） */
+  viewId?: string
 }
 
 export function isReportDataType(data: FinalReportType): data is ReportDataType {

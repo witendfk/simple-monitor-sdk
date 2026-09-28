@@ -43,6 +43,8 @@ export interface TransportDeps {
   breadcrumb: IBreadcrumb
   options: ClientOptions
   session: SessionManager
+  /** 当前路由视图（信封 context.viewId；错误事件自带采集时刻的 viewId） */
+  getViewId: () => string
 }
 
 /**
@@ -68,6 +70,7 @@ export class TransportData implements ITransportData {
   private readonly breadcrumb: IBreadcrumb
   private readonly options: ClientOptions
   private readonly session: SessionManager
+  private readonly getViewId: () => string
   /** 设备信息快照（采集端 setup 时写入，信封组装取用） */
   deviceInfo?: DeviceInfo
   private readonly sender: BatchSender
@@ -78,6 +81,7 @@ export class TransportData implements ITransportData {
     this.breadcrumb = deps.breadcrumb
     this.options = deps.options
     this.session = deps.session
+    this.getViewId = deps.getViewId
     this.queue = new Queue()
     this.beforeDataReport = undefined
     this.backTrackerId = undefined
@@ -133,6 +137,7 @@ export class TransportData implements ITransportData {
         sessionId: this.session.getSessionId(),
         trackerId: String(this.getTrackerId()),
         page: _global?.location?.href ?? '',
+        viewId: this.getViewId() || undefined,
         deviceInfo: this.deviceInfo,
       },
       events

@@ -137,9 +137,12 @@ flowchart LR
 
 - **定义**：页面生命周期内用户交互（点击/按键/触摸）的"输入→下一帧绘制"全链路延迟。
 - **数据源**：`observe('event')`，用 `interactionId` 过滤出真正的交互。
-- **关键实现**：记录所有交互的 `duration`，取 **worst**。
+- **关键实现**：按 `interactionId` 聚合（一次交互的多条 event entry 取组内最大 duration），
+  终值计算在 `lib/computeINP.ts`：交互数 ≤ 50 取 worst，> 50 取 P98（对齐官方 web-vitals，
+  过滤 GC/IO 系统抖动噪声）。纯函数实现，脱离浏览器可单测。
 - **终止**：`onHidden`。
-- **坑**：取全局 worst 是简化——官方在长会话（>50 交互）降级到 P98；当前实现长会话会偏高。有意保留（P98 实现复杂、产出小）。
+- **历坑**：encode 旧实现取全局 worst 且不按 interactionId 聚合——长会话被尾部噪声带偏。
+  现已对齐官方（聚合 + P98）；本节早期版本描述的「有意保留 worst 简化」已过时。
 - **背景**：INP 于 2024-03-12 取代 FID 成为 Core Web Vital。FID 只测首次输入，INP 覆盖所有交互。
 - **代码**：[getINP.ts](src/metrics/getINP.ts)
 
@@ -251,7 +254,7 @@ new WebVitals({
 | `reportCallback` 走 idle | 监控 SDK 不能拖慢被监控页面 |
 | 卸载走 urgent 同步 | idle 在页面销毁后不执行，会丢数据 |
 | CLS 用 session-window | 对齐 2021 官方定义，旧累加是无界计数器 |
-| INP 取全局 worst | 简化（官方 P98 投入大），方向正确 |
+| INP 聚合 + P98 | 已对齐官方 web-vitals 语义 |
 | CCP 状态用模块单例 | 简化（单实例下无问题），多实例是已知边界 |
 | RT 从 CCP 剥离独立 | resource timing 是通用诊断能力，不属于自定义首屏 |
 | RT 阈值可配 | "多慢算慢"无官方规范，业务自定（默认 300ms） |

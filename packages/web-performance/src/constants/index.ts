@@ -15,6 +15,7 @@ export enum metricsName {
   RT = 'resource-timing',
   CLS = 'cumulative-layout-shift',
   FPS = 'fps',
+  LONG_TASK = 'long-task',
   ACT = 'api-complete-time',
   /* information */
   DI = 'device-information',

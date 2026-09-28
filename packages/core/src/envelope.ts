@@ -28,6 +28,8 @@ export interface EnvelopeContext {
   page: string
   referrer?: string
   viewport?: string
+  /** 当前路由视图快照（信封级；错误事件另带采集时刻 viewId） */
+  viewId?: string
   deviceInfo?: DeviceInfo
 }
 
@@ -80,6 +82,7 @@ export function toErrorEvent(data: ReportDataType, breadcrumbs?: BreadcrumbPushD
       errorId: typeof data.errorId === 'number' ? data.errorId : undefined,
       componentName: data.componentName ? String(data.componentName) : undefined,
       customTag: data.customTag ? String(data.customTag) : undefined,
+      viewId: data.viewId ? String(data.viewId) : undefined,
       http,
     },
     breadcrumbs: toBreadcrumbs(breadcrumbs),
@@ -174,6 +177,7 @@ export function buildEnvelope(ctx: EnvelopeContext, events: MonitorEvent[]): Tra
       page: ctx.page,
       referrer: ctx.referrer,
       viewport: ctx.viewport,
+      viewId: ctx.viewId,
       device: toDeviceSnapshot(ctx.deviceInfo),
     },
     events,

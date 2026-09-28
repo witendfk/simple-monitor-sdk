@@ -43,6 +43,7 @@ function reportVueError(
   const parsed = extractErrorStack(err as Error, Severity.Normal) as ReportDataType | null
   if (!parsed) return
   parsed.type = ErrorTypes.VUE_ERROR
+  parsed.viewId = client.viewId || undefined
   ;(parsed as ReportDataType & { componentName?: string; errorInfo?: string }).componentName =
     getComponentName(instance)
   // 错误来源标记（render / setup hook / lifecycle hook 等），旧字段名 propsData 语义错位已废弃

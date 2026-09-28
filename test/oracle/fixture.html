@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>web-vitals oracle fixture</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    /* LCP 候选 1：首屏大块（首帧绘制） */
+    #hero1 { width: 100%; height: 300px; background: #4a90d9; }
+    /* LCP 候选 2：500ms 后出现更大的块（LCP 更新为它） */
+    #hero2 { width: 100%; height: 600px; background: #2c5f8a; display: none; }
+    /* CLS 源：无尺寸占位 → 定时增高（非输入引发的布局偏移） */
+    #shifty { width: 80%; height: 40px; background: #eee; margin: 10px auto; }
+    #shifty.tall { height: 260px; }
+    #btn { display: block; margin: 20px auto; padding: 12px 32px; }
+    #log { font-size: 12px; color: #666; padding: 8px; }
+  </style>
+</head>
+<body>
+  <div id="hero1">hero-1</div>
+  <div id="shifty">shifty</div>
+  <button id="btn">busy click</button>
+  <div id="hero2">hero-2</div>
+  <div id="log"></div>
+  <script>
+    // 时序编排（固定延时，不依赖网络/图片）；交互与 hidden 由测试用真实输入驱动：
+    // 500ms  LCP 候选 2 出现（更大 → LCP 更新，且发生在首次输入前）
+    // 800ms  布局偏移（CLS > 0，非输入引发）
+    // 900ms  绑定 busy click 处理器（INP ≈ 120ms+；真实点击同时按规范冻结 LCP）
+    function busy(ms) {
+      const start = performance.now()
+      while (performance.now() - start < ms) { /* 阻塞主线程制造 long task / 高 INP */ }
+    }
+    setTimeout(() => { document.getElementById('hero2').style.display = 'block' }, 500)
+    setTimeout(() => { document.getElementById('shifty').classList.add('tall') }, 800)
+    setTimeout(() => {
+      document.getElementById('btn').addEventListener('click', () => busy(120))
+      document.getElementById('log').textContent = 'ready-for-interaction'
+    }, 900)
+  </script>
+</body>
+</html>

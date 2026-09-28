@@ -31,6 +31,11 @@ export class MonitorClient {
   readonly options = new Options()
   /** 会话与用户标识 */
   readonly session = new SessionManager()
+  /**
+   * SPA 路由视图标识（M3）：browser 的路由采集在捕获时刻更新，
+   * 错误/性能数据用它做「哪个路由页」归因。初始为空，setupReplace 时写入当前路由。
+   */
+  viewId: string = ''
   /** 上报引擎（依赖 breadcrumb/options/session 注入） */
   readonly transport: TransportData
 
@@ -43,6 +48,7 @@ export class MonitorClient {
       breadcrumb: this.breadcrumb,
       options: this.options,
       session: this.session,
+      getViewId: () => this.viewId,
     })
   }
 

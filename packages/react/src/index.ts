@@ -44,6 +44,7 @@ export function errorBoundaryReport(
   const parsed = extractErrorStack(error as Error, Severity.Normal) as ReportDataType | null
   if (!parsed) return
   parsed.type = ErrorTypes.REACT_ERROR
+  parsed.viewId = client.viewId || undefined
   ;(parsed as ReportDataType & { componentName?: string }).componentName = parseComponentStack(
     info.componentStack
   )

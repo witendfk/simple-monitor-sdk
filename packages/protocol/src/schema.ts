@@ -69,6 +69,8 @@ export const ErrorPayloadSchema = z.object({
   errorId: z.number().optional(),
   componentName: z.string().optional(),
   customTag: z.string().optional(),
+  /** SPA 路由视图标识（采集时刻打标，M3）：错误可归因到具体路由页 */
+  viewId: z.string().optional(),
   http: HttpPayloadSchema.optional(),
 })
 
@@ -98,6 +100,7 @@ export const KNOWN_METRIC_NAMES = [
   'cumulative-layout-shift',
   'fps',
   'api-complete-time',
+  'long-task',
 ] as const
 
 /** 面包屑（用户行为）单条 */

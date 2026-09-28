@@ -5,6 +5,8 @@ import type { OnHiddenCallback } from '../types'
  * once=true 时触发后自动解绑。
  */
 export const onHidden = (cb: OnHiddenCallback, once?: boolean): void => {
+  // SSR/node 环境：无事件订阅能力即 no-op（监控引擎不允许在非浏览器环境崩溃）
+  if (typeof addEventListener !== 'function') return
   const onHiddenOrPageHide = (event: Event): void => {
     if (event.type === 'pagehide' || document.visibilityState === 'hidden') {
       cb(event)

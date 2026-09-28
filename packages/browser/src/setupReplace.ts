@@ -11,6 +11,7 @@
 
 import type { MonitorClient } from '@simple-monitor/core'
 import { collectDeviceInfo } from './deviceInfo'
+import { currentViewId } from './viewId'
 import {
   listenError,
   listenUnhandledRejection,
@@ -34,8 +35,9 @@ import {
  * 为 client 安装全部浏览器采集器。
  */
 export function setupReplace(client: MonitorClient): void {
-  // 0. 采集设备信息（一次性写入 transport，上报信封复用）
+  // 0. 采集设备信息（一次性写入 transport，上报信封复用）；初始化路由视图标识
   client.transport.deviceInfo = collectDeviceInfo()
+  client.viewId = currentViewId()
 
   // 1. 先订阅处理器（注册回调到事件总线）
   handleError(client)

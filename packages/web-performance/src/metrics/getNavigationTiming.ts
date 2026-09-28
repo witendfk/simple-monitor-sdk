@@ -67,10 +67,9 @@ const getNavigationTiming = (): Promise<IPerformanceNavigationTiming> | undefine
       poRef.current = observe('navigation', entryHandler)
     } else {
       const entries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[]
-      const navigation =
-        entries.length > 0
-          ? entries[0]
-          : ((performance as any).timing as PerformanceNavigationTiming | undefined)
+      const legacyTiming = (performance as Performance & { timing?: PerformanceNavigationTiming })
+        .timing
+      const navigation = entries.length > 0 ? entries[0] : legacyTiming
       resolveNavigationTiming(navigation, resolve)
     }
   })

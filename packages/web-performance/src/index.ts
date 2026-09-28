@@ -29,6 +29,7 @@ import { initFPS } from './metrics/getFPS'
 import { initCLS } from './metrics/getCLS'
 import { initCCP } from './metrics/getCCP'
 import { initResourceTiming } from './metrics/getResourceTiming'
+import { initLongTask } from './metrics/getLongTask'
 
 // 模块级句柄（getCurrentMetrics/setEndMark 等实例 API 需要访问最近一次构造的实例状态）。
 // 多实例时后者覆盖前者——构造期即覆盖，各实例回调闭包各自持有引用不受影响；
@@ -87,15 +88,23 @@ class WebVitals implements IWebVitals {
     )
     // 资源耗时：hidden/unload 采集慢资源 Top-N（自身注册监听，阈值可配）
     initResourceTiming(metricsStore, reporter, resourceThreshold, resourceTopN)
+    // 长任务：hidden 时终值上报（定位主线程阻塞源，M3）
+    initLongTask(metricsStore, reporter, immediately)
 
-    addEventListener(
-      isCustomEvent ? 'custom-contentful-paint' : 'pageshow',
-      () => {
-        initFP(metricsStore, reporter, immediately, scoreConfig)
-        initFCP(metricsStore, reporter, immediately, scoreConfig)
-      },
-      { once: true, capture: true }
-    )
+    // FP/FCP 注册时机：晚于 load 注入（动态加载/运营脚本）时 pageshow 已错过，
+    // 退化为 once 监听会永久缺失——readyState 已 complete 则立即采集（M3 修复）
+    const initPaint = (): void => {
+      initFP(metricsStore, reporter, immediately, scoreConfig)
+      initFCP(metricsStore, reporter, immediately, scoreConfig)
+    }
+    if (document.readyState === 'complete') {
+      setTimeout(initPaint)
+    } else {
+      addEventListener(isCustomEvent ? 'custom-contentful-paint' : 'pageshow', initPaint, {
+        once: true,
+        capture: true,
+      })
+    }
 
     afterLoad(() => {
       initNavigationTiming(metricsStore, reporter, immediately)

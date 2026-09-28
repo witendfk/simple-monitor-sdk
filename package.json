@@ -16,7 +16,7 @@
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"**/*.{ts,json,md}\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --exclude '**/oracle/**'",
     "test:watch": "vitest",
     "demo:server": "node examples/server/index.js",
     "demo": "vite --config examples/web/vanilla/vite.config.ts",
@@ -24,7 +24,8 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm build && changeset publish",
-    "lint:ci": "eslint . --ext .ts --max-warnings 176"
+    "lint:ci": "eslint . --ext .ts --max-warnings 176",
+    "test:conformance": "vitest run test/oracle/conformance.spec.ts"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1",
@@ -34,11 +35,13 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.3",
     "jsdom": "^25.0.1",
+    "playwright": "^1.49.1",
     "prettier": "^3.2.5",
     "tsup": "^8.0.2",
     "typescript": "^5.3.3",
     "vite": "^5.1.0",
-    "vitest": "^3.2.6"
+    "vitest": "^3.2.6",
+    "web-vitals": "^5.3.0"
   },
   "engines": {
     "node": ">=16.0.0",
