@@ -21,7 +21,6 @@ import {
   getGlobal,
   validateOption,
   isEmpty,
-  variableTypeDetection,
 } from '@simple-monitor/utils'
 import { breadcrumb } from './breadcrumb'
 import { createErrorId } from './errorId'
@@ -97,7 +96,13 @@ export class TransportData implements ITransportData {
     } = options
 
     if (validateOption(dsn, 'dsn', 'string')) this.errorDsn = dsn ?? ''
-    if (validateOption(trackDsn, 'trackDsn', 'string')) this.trackDsn = trackDsn ?? ''
+    // 性能数据走 trackDsn 通道；未配置（或显式空串）时回落 dsn，
+    // 否则 send() 会因 trackDsn 为空而静默丢弃全部性能上报（总纲 §3.1 红线修复）
+    if (validateOption(trackDsn, 'trackDsn', 'string') && trackDsn) {
+      this.trackDsn = trackDsn
+    } else if (this.errorDsn) {
+      this.trackDsn = this.errorDsn
+    }
     if (validateOption(apikey, 'apikey', 'string')) this.apikey = apikey ?? ''
     if (validateOption(trackKey, 'trackKey', 'string')) this.trackKey = trackKey ?? ''
     if (validateOption(useImgUpload, 'useImgUpload', 'boolean'))
@@ -161,17 +166,6 @@ export class TransportData implements ITransportData {
   }
 
   /**
-   * 获取录屏数据
-   */
-  getRecord(): any[] {
-    const recordData = _support.record
-    if (recordData && variableTypeDetection.isArray(recordData) && recordData.length > 2) {
-      return recordData
-    }
-    return []
-  }
-
-  /**
    * 获取设备信息（优先从 _support 获取）
    */
   getDeviceInfo(): DeviceInfo | any {
@@ -186,7 +180,6 @@ export class TransportData implements ITransportData {
       authInfo: this.getAuthInfo(),
       breadcrumb: breadcrumb.getStack(),
       data,
-      record: this.getRecord(),
       deviceInfo: this.getDeviceInfo(),
     }
   }

@@ -34,11 +34,19 @@ export function replaceOld(
     // 保存原始函数
     const original = source[name]
 
+    // 防重复包装：已被本 SDK 包装过的方法直接跳过，
+    // 避免 HMR/StrictMode/多次 init 导致同一方法被层层套娃
+    // （每多一层包装，triggerHandlers 就多触发一次，且性能损耗累积）
+    if (original && (original as any).__monitor_wrapped) {
+      return
+    }
+
     // 创建包装函数
     const wrapped = replacement(original)
 
     // 如果结果是有效函数则替换
     if (typeof wrapped === 'function') {
+      ;(wrapped as any).__monitor_wrapped = true
       source[name] = wrapped
     }
   }

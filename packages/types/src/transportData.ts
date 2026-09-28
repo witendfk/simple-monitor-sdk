@@ -17,7 +17,6 @@ export interface TransportDataType {
   authInfo: AuthInfo
   breadcrumb?: BreadcrumbPushData[]
   data?: FinalReportType
-  record?: any[]
   deviceInfo?: DeviceInfo
 }
 

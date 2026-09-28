@@ -137,7 +137,10 @@ export function extractErrorStack(ex: any, level: Severity): ReportDataType | nu
   }
 
   if (!stack.length) {
-    return null
+    // 堆栈逐行都匹配不上（minify/格式异常）：降级上报 normal（仅 message/url），
+    // 不丢弃——与「完全没有 stack 字段」的分支保持一致，避免丢失 message 线索。
+    // 上游 handleError 仍会因 parsed 存在而走 send；若需更严格过滤可改回 null。
+    return normal
   }
   return {
     ...normal,

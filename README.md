@@ -156,6 +156,8 @@ pnpm test          # 单元测试（vitest）
 pnpm typecheck     # 类型检查
 ```
 
+> 产品目标、架构决策、问题清单与路线图见 [开发总纲.md](./开发总纲.md)（唯一开发依据文档）。
+
 ## License
 
 [MIT](./LICENSE)

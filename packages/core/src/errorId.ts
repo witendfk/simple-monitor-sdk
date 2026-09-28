@@ -172,12 +172,21 @@ function objectOrder(reason: any): string {
 
 /**
  * http://.../project?id=1#a => http://.../project
+ * http://.../id/123 => http://.../id/{param}
+ * http://.../api/123/user/456 => http://.../api/{param}/user/{param}
+ *
+ * 归一化规则：去掉 query/hash，把任意位置的「纯数字段」换成 {param}。
+ * 只匹配整段为数字的路径段（/123/、/456），不误伤版本号（/v2/）或字母混合段。
+ *
+ * http://.../project?id=1#a => http://.../project
  * http://.../id/123=> http://.../id/{param}
  *
  * @param url
  */
 export function getRealPath(url: string): string {
-  return url.replace(/[?#].*$/, '').replace(/\/\d+([/]*$)/, '{param}$1')
+  return url
+    .replace(/[?#].*$/, '')
+    .replace(/\/\d+(?=\/|$)/g, '/{param}')
 }
 
 /**

@@ -11,7 +11,6 @@ export interface MonitorSupport {
   breadcrumb: IBreadcrumb
   transportData: ITransportData
   replaceFlag: { [key: string]: boolean | undefined }
-  record?: any[]
   deviceInfo?: DeviceInfo
   options?: any // Options 类在 core 包中，避免循环依赖
   track?: any

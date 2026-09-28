@@ -5,6 +5,7 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
+      "@simple-monitor/protocol": ["./packages/protocol/src"],
       "@simple-monitor/types": ["./packages/types/src"],
       "@simple-monitor/shared": ["./packages/shared/src"],
       "@simple-monitor/utils": ["./packages/utils/src"],

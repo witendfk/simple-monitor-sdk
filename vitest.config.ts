@@ -7,6 +7,7 @@ const pkgs = (name: string) => resolve(process.cwd(), `packages/${name}/src`)
 export default defineConfig({
   resolve: {
     alias: {
+      '@simple-monitor/protocol': pkgs('protocol'),
       '@simple-monitor/types': pkgs('types'),
       '@simple-monitor/shared': pkgs('shared'),
       '@simple-monitor/utils': pkgs('utils'),
