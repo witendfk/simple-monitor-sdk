@@ -3,13 +3,8 @@
  * 隐私脱敏测试（M1 收尾批次）：mask 纯函数 + 三入口接入行为
  * （DOM innerText / console args / HTTP 请求体）
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import {
-  mask,
-  setPrivacyMaskEnabled,
-  htmlElementAsString,
-  getTimestamp,
-} from '@simple-monitor/utils'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { mask, setPrivacyMaskEnabled, htmlElementAsString } from '@simple-monitor/utils'
 import { BreadCrumbTypes } from '@simple-monitor/types'
 import { MonitorClient, handleConsole } from '@simple-monitor/core'
 import { setupReplace } from '../../packages/browser/src/setupReplace'

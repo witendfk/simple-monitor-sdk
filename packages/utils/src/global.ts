@@ -39,9 +39,12 @@ export const isWxMiniEnv =
   variableTypeDetection.isObject(typeof wx !== 'undefined' ? wx : 0) &&
   variableTypeDetection.isFunction(typeof App !== 'undefined' ? App : 0)
 
-export const isBrowserEnv = variableTypeDetection.isWindow(
-  typeof window !== 'undefined' ? window : 0
-)
+/**
+ * 浏览器环境判定：拥有 document 的 window 才是浏览器环境。
+ * 不用 toString 标签（isWindow）——跨 realm / 环境代理（vitest jsdom、iframe）
+ * 的 window 标签可能是 '[object global]'，语义化判定更稳。
+ */
+export const isBrowserEnv = typeof window !== 'undefined' && !!window.document
 
 /**
  * 检测是否支持 history API

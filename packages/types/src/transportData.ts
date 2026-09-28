@@ -10,6 +10,12 @@ export interface AuthInfo {
   sdkVersion: string
   sdkName: string
   trackerId: string
+  /** 会话标识（sessionStorage 级，M2） */
+  sessionId?: string
+  /** 发版标识（M2） */
+  release?: string
+  /** 环境标识（M2） */
+  env?: string
 }
 
 export interface TransportDataType {

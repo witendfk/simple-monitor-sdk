@@ -15,6 +15,8 @@ export class Options {
   traceIdFieldName: string = 'traceparent'
   throttleDelayTime: number = 200
   maxDuplicateCount: number = 2
+  /** 性能数据采样率 0~1（默认 1 不采样；错误始终 100% 上报，总纲 §五规格 2） */
+  sampleRate: number = 1
   disabled: boolean = false
   onRouteChange?: InitOptions['onRouteChange']
 
@@ -26,6 +28,7 @@ export class Options {
       throttleDelayTime,
       includeHttpUrlTraceIdRegExp,
       maxDuplicateCount,
+      sampleRate,
       disabled,
       onRouteChange,
     } = options
@@ -40,6 +43,11 @@ export class Options {
     }
     if (validateOption(maxDuplicateCount, 'maxDuplicateCount', 'number')) {
       this.maxDuplicateCount = Number(maxDuplicateCount)
+    }
+    if (validateOption(sampleRate, 'sampleRate', 'number')) {
+      const r = Number(sampleRate)
+      // 越界值收敛到 [0,1]
+      this.sampleRate = Math.min(1, Math.max(0, r))
     }
     validateOption(disabled, 'disabled', 'boolean') && (this.disabled = !!disabled)
     validateOption(onRouteChange, 'onRouteChange', 'function') &&

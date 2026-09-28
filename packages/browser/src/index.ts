@@ -8,7 +8,7 @@
  */
 
 import type { InitOptions } from '@simple-monitor/types'
-import { logger, getGlobal } from '@simple-monitor/utils'
+import { logger } from '@simple-monitor/utils'
 import { getDefaultMonitorClient } from '@simple-monitor/core'
 import type { MonitorClient } from '@simple-monitor/core'
 import { setupReplace } from './setupReplace'
@@ -27,7 +27,6 @@ export { setupReplace } from './setupReplace'
  */
 let instrumentedClient: MonitorClient | null = null
 
-const _global = getGlobal<any>()
 /** 门面级防重入标记（保留：web 门面用它阻止 WebVitals 重复构造） */
 const INIT_FLAG = '__Monitor__init__'
 export { INIT_FLAG }
@@ -48,7 +47,9 @@ export function init(
 ): boolean {
   if (instrumentedClient) {
     if (instrumentedClient !== client) {
-      logger.warn('browser 监控已绑定另一个 MonitorClient 实例（一个页面仅支持一个 client），本次 init 已忽略')
+      logger.warn(
+        'browser 监控已绑定另一个 MonitorClient 实例（一个页面仅支持一个 client），本次 init 已忽略'
+      )
     }
     return true
   }

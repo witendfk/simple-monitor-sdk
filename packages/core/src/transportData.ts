@@ -1,8 +1,11 @@
 /**
- * 数据上报模块（M1 类化，ADR-1）
+ * 数据上报模块（M2 可靠性引擎）
  *
- * TransportData 不再是模块单例：breadcrumb / options 由 MonitorClient 构造时注入。
- * 队列、卸载标记等状态全部随实例走。
+ * send() 语义不变：去重（errorId）→ beforeDataReport 钩子 → 按 dsn 路由。
+ * 通道层升级（ADR：批量信封取代逐条请求）：
+ *  - 浏览器环境默认走 BatchSender（批量 + gzip + 重试 + IndexedDB 离线兜底）；
+ *  - useImgUpload / 小程序环境保留旧通道（imgRequest / wxPost 逐条）；
+ *  - beaconPost / xhrPost 保留为独立方法（离场同步通道 + 降级路径）。
  */
 
 import type {
@@ -15,9 +18,9 @@ import type {
   IBreadcrumb,
 } from '@simple-monitor/types'
 import { isReportDataType, isPerformanceData } from '@simple-monitor/types'
+import type { TransportEnvelope } from '@simple-monitor/protocol'
 import {
   Queue,
-  generateUUID,
   isWxMiniEnv,
   isBrowserEnv,
   logger,
@@ -27,30 +30,19 @@ import {
 } from '@simple-monitor/utils'
 import { createErrorId } from './errorId'
 import { SDK_VERSION, SDK_NAME } from '@simple-monitor/shared'
+import { toErrorEvent, toPerfEvent, buildEnvelope } from './envelope'
+import { BatchSender } from './batchSender'
+import { SessionManager } from './session'
 import type { ClientOptions } from './options'
 
 // 获取全局对象
 const _global = getGlobal<any>()
 
-/**
- * 获取默认 TrackerId（内部方法）
- * 从 localStorage 读取或生成 UUID，作为 getTrackerId 的后备默认实现
- */
-function getDefaultTrackerId(): string {
-  const storage = _global.localStorage
-  if (!storage) return generateUUID()
-
-  const trackerId = storage.getItem('simple-monitor-tracker-id')
-  if (trackerId) return trackerId
-  const newTrackerId = generateUUID()
-  storage.setItem('simple-monitor-tracker-id', newTrackerId)
-  return newTrackerId
-}
-
 /** TransportData 的运行时依赖（由 client 注入） */
 export interface TransportDeps {
   breadcrumb: IBreadcrumb
   options: ClientOptions
+  session: SessionManager
 }
 
 /**
@@ -68,18 +60,24 @@ export class TransportData implements ITransportData {
   trackKey: string
   errorDsn: string
   trackDsn: string
+  /** 发版标识（发版关联分析的核心维度） */
+  release?: string
+  /** 环境标识：production / staging / dev */
+  env?: string
 
   private readonly breadcrumb: IBreadcrumb
   private readonly options: ClientOptions
+  private readonly session: SessionManager
   /** 设备信息快照（采集端 setup 时写入，信封组装取用） */
   deviceInfo?: DeviceInfo
-  /** 通道状态机：leaving = pagehide/hidden 离场中；回到可见即复位（修复旧版粘滞 bug） */
-  private channelLeaving = false
-  private unloadBound = false
+  private readonly sender: BatchSender
+  private lifecycleBound = false
+  private replayed = false
 
   constructor(deps: TransportDeps) {
     this.breadcrumb = deps.breadcrumb
     this.options = deps.options
+    this.session = deps.session
     this.queue = new Queue()
     this.beforeDataReport = undefined
     this.backTrackerId = undefined
@@ -91,6 +89,55 @@ export class TransportData implements ITransportData {
     this.trackKey = ''
     this.errorDsn = ''
     this.trackDsn = ''
+    this.sender = new BatchSender({
+      buildEnvelope: (payloads) => this.buildEnvelopeFor(payloads),
+      // 兼容 configReportUrl 钩子：批量通道在信封级调用（返回 falsy 取消发送，与旧语义一致）
+      beforeSend: (envelope, dsn) => {
+        if (typeof this.configReportUrl !== 'function') return dsn
+        try {
+          const custom = this.configReportUrl(envelope as unknown as TransportDataType, dsn)
+          return custom || false
+        } catch (error) {
+          logger.error('configReportUrl hook error:', error)
+          return false
+        }
+      },
+    })
+  }
+
+  /**
+   * 把一批载荷组装成协议信封（供 BatchSender 回调）
+   * 错误事件附带当前面包屑快照（flush 时刻的行为栈，覆盖错误到上报之间的操作）
+   */
+  private buildEnvelopeFor(
+    payloads: Array<{ dsn: string; data: any }>
+  ): { dsn: string; envelope: TransportEnvelope } | null {
+    if (payloads.length === 0) return null
+    const events = []
+    for (const { data } of payloads) {
+      if (isPerformanceData(data)) {
+        const perfEvent = toPerfEvent(data.metrics ?? {})
+        if (perfEvent) events.push(perfEvent)
+      } else if (isReportDataType(data)) {
+        events.push(toErrorEvent(data, this.breadcrumb.getStack()))
+      }
+    }
+    if (events.length === 0) return null
+    const envelope = buildEnvelope(
+      {
+        apiKey: this.apikey,
+        release: this.release,
+        env: this.env,
+        sdkName: SDK_NAME,
+        sdkVersion: SDK_VERSION,
+        sessionId: this.session.getSessionId(),
+        trackerId: String(this.getTrackerId()),
+        page: _global?.location?.href ?? '',
+        deviceInfo: this.deviceInfo,
+      },
+      events
+    )
+    return { dsn: payloads[0].dsn, envelope }
   }
 
   /**
@@ -108,6 +155,8 @@ export class TransportData implements ITransportData {
       configReportUrl,
       configReportWxRequest,
       backTrackerId,
+      release,
+      env,
     } = options
 
     if (validateOption(dsn, 'dsn', 'string')) this.errorDsn = dsn ?? ''
@@ -132,27 +181,34 @@ export class TransportData implements ITransportData {
       this.configReportWxRequest = configReportWxRequest
     if (validateOption(backTrackerId, 'backTrackerId', 'function'))
       this.backTrackerId = backTrackerId
+    if (validateOption(release, 'release', 'string')) this.release = release
+    if (validateOption(env, 'env', 'string')) this.env = env
   }
 
   /**
    * 获取 TrackerId
-   * 优先使用用户自定义的 backTrackerId，否则使用默认实现（从 localStorage 读取或生成 UUID）
+   * 优先使用用户自定义的 backTrackerId，否则使用 SessionManager（localStorage 级）
    */
   getTrackerId(): string | number {
     if (typeof this.backTrackerId === 'function') {
-      const trackerId = this.backTrackerId()
-      if (typeof trackerId === 'string' || typeof trackerId === 'number') {
-        return trackerId
+      try {
+        const trackerId = this.backTrackerId()
+        if (typeof trackerId === 'string' || typeof trackerId === 'number') {
+          return trackerId
+        }
+        logger.error(
+          `trackerId:${trackerId} 期望 string 或 number 类型，但是传入类型为 ${typeof trackerId}`
+        )
+      } catch (error) {
+        // 用户钩子异常不逃逸（send 是 fire-and-forget 调用，逃逸即 unhandled rejection）
+        logger.error('backTrackerId hook error:', error)
       }
-      logger.error(
-        `trackerId:${trackerId} 期望 string 或 number 类型，但是传入类型为 ${typeof trackerId}`
-      )
     }
-    return getDefaultTrackerId()
+    return this.session.getTrackerId()
   }
 
   /**
-   * 获取认证信息
+   * 获取认证信息（M2 增加 sessionId / release / env）
    */
   getAuthInfo(): AuthInfo {
     const trackerId = this.getTrackerId()
@@ -163,6 +219,8 @@ export class TransportData implements ITransportData {
     }
     this.apikey && (result.apikey = this.apikey)
     this.trackKey && (result.trackKey = this.trackKey)
+    this.release && (result.release = this.release)
+    this.env && (result.env = this.env)
     return result
   }
 
@@ -174,7 +232,7 @@ export class TransportData implements ITransportData {
   }
 
   /**
-   * 组装完整的上报数据
+   * 组装完整的上报数据（旧逐条信封；批量通道在 BatchSender 内按协议组装）
    */
   getTransportData(data: FinalReportType): TransportDataType {
     return {
@@ -234,7 +292,7 @@ export class TransportData implements ITransportData {
   }
 
   /**
-   * 使用 XHR 上报数据（队列模式）
+   * 使用 XHR 上报数据（队列模式；旧通道：img 模式 / 降级路径）
    */
   xhrPost(data: TransportDataType, url: string): void {
     const requestFun = (): void => {
@@ -324,7 +382,7 @@ export class TransportData implements ITransportData {
   }
 
   /**
-   * 使用 navigator.sendBeacon 上报（离场场景，浏览器保证发出）。
+   * 使用 navigator.sendBeacon 上报（离场同步通道，浏览器保证发出）。
    * 不可用或排队失败时降级到 xhrPost。数据以 JSON 字符串发送。
    */
   beaconPost(data: TransportDataType, url: string): void {
@@ -341,35 +399,39 @@ export class TransportData implements ITransportData {
   }
 
   /**
-   * 监听页面离场（pagehide / visibilitychange→hidden 置位；
-   * pageshow / visibilitychange→visible 复位）。
-   *
-   * 修复旧版粘滞 bug：旧实现 hidden 后永不复位，用户切走再切回后
-   * 所有上报永久走 sendBeacon（configReportXhr 失效、64KB 上限、无重试）。
+   * 生命周期绑定：pagehide/hidden → sender.markLeaving（立即 beacon）；
+   * pageshow/visible → sender.markActive（复位，修复旧版粘滞 bug）。
+   * 首次绑定时触发离线缓存重放（fire-and-forget）。
    */
   bindLifecycle(): void {
-    if (this.unloadBound) return
+    if (this.lifecycleBound) return
+    this.lifecycleBound = true
     if (!_global || typeof _global.addEventListener !== 'function') return
-    this.unloadBound = true
-    const markLeaving = (): void => {
-      this.channelLeaving = true
-    }
-    const markBack = (): void => {
-      this.channelLeaving = false
-    }
     try {
-      _global.addEventListener('pagehide', markLeaving)
-      _global.addEventListener('pageshow', markBack)
+      _global.addEventListener('pagehide', () => this.sender.markLeaving())
+      _global.addEventListener('pageshow', () => this.sender.markActive())
       const doc = _global.document
       if (doc && typeof doc.addEventListener === 'function') {
         doc.addEventListener('visibilitychange', () => {
-          if (doc.visibilityState === 'hidden') markLeaving()
-          else markBack()
+          if (doc.visibilityState === 'hidden') this.sender.markLeaving()
+          else this.sender.markActive()
         })
       }
     } catch (error) {
       logger.error('bindLifecycle error:', error)
     }
+    if (!this.replayed) {
+      this.replayed = true
+      void this.sender.replay()
+    }
+  }
+
+  /** 性能数据采样（总纲 §五规格 2：错误 100%，perf 按 sampleRate） */
+  private shouldSamplePerf(): boolean {
+    const rate = this.options.sampleRate
+    if (rate === undefined || rate >= 1) return true
+    if (rate <= 0) return false
+    return Math.random() < rate
   }
 
   /**
@@ -377,6 +439,16 @@ export class TransportData implements ITransportData {
    * 根据环境和配置选择上报方式
    */
   async send(data: FinalReportType): Promise<void> {
+    try {
+      await this.sendInner(data)
+    } catch (error) {
+      // send 是各 handler 的 fire-and-forget 调用（nativeTryCatch 只挡同步异常）：
+      // 任何异步异常必须在此消化，监控 SDK 不允许产生 unhandled rejection
+      logger.error('transport send error:', error)
+    }
+  }
+
+  private async sendInner(data: FinalReportType): Promise<void> {
     // disabled：完全关闭上报（采集器仍装载、面包屑仍记录，但不发出请求）
     if (this.options.disabled) return
     let dsn = ''
@@ -384,6 +456,8 @@ export class TransportData implements ITransportData {
     // 判断数据类型并选择对应的 DSN
     // 性能数据走 trackDsn（埋点通道），不走 error 去重
     if (isPerformanceData(data)) {
+      // 性能采样：在采集出口过滤（省流量也省内存）
+      if (!this.shouldSamplePerf()) return
       dsn = this.trackDsn
       if (isEmpty(dsn)) {
         logger.error('trackDsn为空，没有传入埋点上报的dsn地址，请在init中传入')
@@ -403,31 +477,33 @@ export class TransportData implements ITransportData {
       }
     }
 
-    // 执行 beforePost 处理
+    // 执行 beforePost 处理（去重 + 钩子）
     const result = await this.beforePost(data)
     if (!result) return
 
-    // 执行 configReportUrl 钩子
-    if (typeof this.configReportUrl === 'function') {
-      try {
-        const customUrl = this.configReportUrl(result, dsn)
-        if (!customUrl) return
-        dsn = customUrl
-      } catch (error) {
-        logger.error('configReportUrl hook error:', error)
-        return
-      }
-    }
-
     // 根据环境选择上报方式
     if (isBrowserEnv) {
+      // 图片通道（旧配置）保持逐条
       if (this.useImgUpload) return this.imgRequest(result, dsn)
-      // 页面离场时优先 sendBeacon（浏览器保证发出，XHR 在 unload 会丢）
-      if (this.channelLeaving) return this.beaconPost(result, dsn)
-      return this.xhrPost(result, dsn)
+      // M2：批量信封通道（BatchSender 内部处理 active/leaving 状态与降级）
+      this.sender.add(dsn, result.data)
+      return
     }
     if (isWxMiniEnv) {
       return this.wxPost(result, dsn)
     }
   }
+
+  /** 立即 flush 全部缓冲（测试/销毁前用） */
+  async flush(): Promise<void> {
+    await this.sender.flushAll()
+  }
+
+  /** 当前缓冲条数（测试观测用） */
+  get bufferedCount(): number {
+    return this.sender.bufferedCount
+  }
 }
+
+// SessionManager 由 client 装配时创建；此处导出类型引用方便测试
+export { SessionManager }

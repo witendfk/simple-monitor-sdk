@@ -186,9 +186,7 @@ function objectOrder(reason: any): string {
  * 只匹配整段为数字的路径段，不误伤版本号（/v2/）或字母混合段。
  */
 export function getRealPath(url: string): string {
-  return url
-    .replace(/[?#].*$/, '')
-    .replace(/\/\d+(?=\/|$)/g, '/{param}')
+  return url.replace(/[?#].*$/, '').replace(/\/\d+(?=\/|$)/g, '/{param}')
 }
 
 /**

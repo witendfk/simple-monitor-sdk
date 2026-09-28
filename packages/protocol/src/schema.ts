@@ -163,6 +163,8 @@ export const TransportEnvelopeSchema = z.object({
     viewport: z.string().optional(),
     /** SPA 路由级标识（M3），错误/性能事件可关联到具体路由视图 */
     viewId: z.string().optional(),
+    /** 设备快照（browser/os/deviceType/netType/screen 等，值统一字符串化） */
+    device: z.record(z.string(), z.string()).optional(),
   }),
   events: z.array(EventSchema).min(1).max(LIMITS.maxEventsPerEnvelope),
 })
@@ -187,7 +189,9 @@ export type TransportEnvelope = z.infer<typeof TransportEnvelopeSchema>
  * ------------------------------------------------------------------ */
 
 /** 不抛错的信封校验（服务端 /report 接收端用；SDK 生产 build 不引用本文件） */
-export function validateEnvelope(input: unknown): z.SafeParseReturnType<unknown, TransportEnvelope> {
+export function validateEnvelope(
+  input: unknown
+): z.SafeParseReturnType<unknown, TransportEnvelope> {
   return TransportEnvelopeSchema.safeParse(input)
 }
 

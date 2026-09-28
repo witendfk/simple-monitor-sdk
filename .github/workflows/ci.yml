@@ -6,8 +6,8 @@ on:
   pull_request:
     branches: [master]
 
-# 质量门：typecheck / build / test。lint 暂未纳入（既有 111 个 any warning +
-# 一个 typescript-eslint 误报 IMetrics unused 的诡异 error），治理后追加 lint job。
+# 质量门：typecheck / lint / build / test。
+# lint：error 必须为 0；warning 用 --max-warnings=176 锁存量（M2 时点），只减不增，归零后移除上限。
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -22,5 +22,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm lint:ci
       - run: pnpm build
       - run: pnpm test

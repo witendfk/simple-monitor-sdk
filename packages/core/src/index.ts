@@ -11,10 +11,14 @@
 
 import type { InitOptions } from '@simple-monitor/types'
 import { getDefaultMonitorClient } from './global'
-import { log } from './external'
 
 // ---- 数据转换（纯函数） ----
-export { httpTransform, resourceTransform, handleConsole, CROSS_ORIGIN_THRESHOLD } from './transformData'
+export {
+  httpTransform,
+  resourceTransform,
+  handleConsole,
+  CROSS_ORIGIN_THRESHOLD,
+} from './transformData'
 
 // ---- 核心类（ADR-1：状态随实例走） ----
 export { MonitorClient } from './client'
@@ -28,6 +32,13 @@ export type { TransportDeps } from './transportData'
 
 // ---- 纯函数工具 ----
 export { createErrorId, clearDedup, getRealPath, getRealPageOrigin, hashCode } from './errorId'
+
+// ---- M2 可靠性引擎 ----
+export { BatchSender, FLUSH_INTERVAL_MS, MAX_BATCH_EVENTS } from './batchSender'
+export { EnvelopeCache } from './idbCache'
+export type { CachedEnvelope } from './idbCache'
+export { SessionManager } from './session'
+export { toErrorEvent, toPerfEvent, toPerfMetric, buildEnvelope } from './envelope'
 
 // ---- 全局与日志 ----
 export { getDefaultMonitorClient, resetDefaultMonitorClient, silentConsoleScope } from './global'

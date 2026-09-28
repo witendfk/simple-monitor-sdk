@@ -8,13 +8,7 @@
  * 显式注册 id 保证幂等（ADR-1 / 总纲 §3.3）。
  */
 
-import {
-  EventTypes,
-  ErrorTypes,
-  Severity,
-  BreadCrumbTypes,
-  HttpTypes,
-} from '@simple-monitor/types'
+import { EventTypes, ErrorTypes, Severity, BreadCrumbTypes, HttpTypes } from '@simple-monitor/types'
 import { extractErrorStack, getTimestamp } from '@simple-monitor/utils'
 import { resourceTransform, httpTransform } from '@simple-monitor/core'
 import { handleConsole } from '@simple-monitor/core'

@@ -23,7 +23,8 @@
     "prepublishOnly": "pnpm build",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && changeset publish",
+    "lint:ci": "eslint . --ext .ts --max-warnings 176"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1",

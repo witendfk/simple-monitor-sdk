@@ -20,6 +20,12 @@ export interface InitOptions
   maxDuplicateCount?: number
   /** 隐私脱敏开关（默认开）：遮蔽手机号/身份证/卡号/凭证，作用于 DOM 文本/console/HTTP body 三入口 */
   enablePrivacyMask?: boolean
+  /** 发版标识（如 'v1.2.3'）：发版关联/回归检测的核心维度 */
+  release?: string
+  /** 环境标识：production / staging / dev */
+  env?: string
+  /** 性能数据采样率 0~1（默认 1；错误始终 100% 上报） */
+  sampleRate?: number
   /** 性能采集开关（默认开，false 关闭 web-performance 采集） */
   performance?: boolean
   /** 慢资源判定阈值 ms（默认 300），透传给 web-performance RT */

@@ -21,7 +21,13 @@ import { getDefaultMonitorClient } from './global'
  * 将一条手动日志写入指定 client（面包屑 + send）
  */
 export function logToClient(
-  { message = 'emptyMsg', tag = '', level = Severity.Critical, ex = '', type = ErrorTypes.LOG_ERROR }: LogTypes,
+  {
+    message = 'emptyMsg',
+    tag = '',
+    level = Severity.Critical,
+    ex = '',
+    type = ErrorTypes.LOG_ERROR,
+  }: LogTypes,
   client: MonitorClient
 ): void {
   // 如果是 Error 对象，提取堆栈信息

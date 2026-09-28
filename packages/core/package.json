@@ -24,7 +24,8 @@
   "dependencies": {
     "@simple-monitor/types": "workspace:*",
     "@simple-monitor/shared": "workspace:*",
-    "@simple-monitor/utils": "workspace:*"
+    "@simple-monitor/utils": "workspace:*",
+    "@simple-monitor/protocol": "workspace:*"
   },
   "keywords": [
     "monitor",

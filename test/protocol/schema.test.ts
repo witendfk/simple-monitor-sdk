@@ -69,7 +69,12 @@ describe('protocol v1（M0 契约）', () => {
         metrics: [
           { name: 'largest-contentful-paint', value: 1234.56, unit: 'ms', score: 0.87 },
           // 红线回归位：INP 的交互明细放 detail，而不是混进 value
-          { name: 'interaction-to-next-paint', value: 88, unit: 'ms', detail: { eventName: 'click' } },
+          {
+            name: 'interaction-to-next-paint',
+            value: 88,
+            unit: 'ms',
+            detail: { eventName: 'click' },
+          },
         ],
       },
     ]
@@ -102,12 +107,15 @@ describe('protocol v1（M0 契约）', () => {
         auth: { ...validEnvelope().auth, apiKey: '' },
       }).success
     ).toBe(false)
-    expect(TransportEnvelopeSchema.safeParse({ ...validEnvelope(), events: [] }).success).toBe(false)
+    expect(TransportEnvelopeSchema.safeParse({ ...validEnvelope(), events: [] }).success).toBe(
+      false
+    )
     expect(
       TransportEnvelopeSchema.safeParse({ ...validEnvelope(), events: [{ kind: 'track' } as any] })
         .success
     ).toBe(false)
-    const { session, ...noSession } = validEnvelope() as any
+    const noSession = { ...validEnvelope() } as any
+    delete noSession.session
     expect(TransportEnvelopeSchema.safeParse(noSession).success).toBe(false)
   })
 
@@ -119,7 +127,9 @@ describe('protocol v1（M0 契约）', () => {
     expect(
       TransportEnvelopeSchema.safeParse({
         ...validEnvelope(),
-        events: [{ kind: 'error', error: validEnvelope().events[0] as any, breadcrumbs: manyBreadcrumbs }],
+        events: [
+          { kind: 'error', error: validEnvelope().events[0] as any, breadcrumbs: manyBreadcrumbs },
+        ],
       }).success
     ).toBe(false)
 

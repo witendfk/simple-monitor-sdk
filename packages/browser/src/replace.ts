@@ -209,46 +209,40 @@ export function fetchReplace(client: MonitorClient): void {
           .then(
             (res: Response) => {
               readResponseBody(res, (text) => {
-                triggerFetch(
-                  client,
-                  {
-                    type: HttpTypes.FETCH,
-                    url,
-                    method,
-                    status: res.status,
-                    reqData: interceptStr(
-                      mask(typeof requestInit?.body === 'string' ? requestInit.body : ''),
-                      2048
-                    ),
-                    sTime,
-                    elapsedTime: getTimestamp() - sTime,
-                    time: sTime,
-                    responseText: text,
-                    traceId,
-                  }
-                )
-              })
-              return res
-            },
-            (err: unknown) => {
-              triggerFetch(
-                client,
-                {
+                triggerFetch(client, {
                   type: HttpTypes.FETCH,
                   url,
                   method,
-                  status: 0,
+                  status: res.status,
                   reqData: interceptStr(
-                    typeof requestInit?.body === 'string' ? requestInit.body : '',
+                    mask(typeof requestInit?.body === 'string' ? requestInit.body : ''),
                     2048
                   ),
                   sTime,
                   elapsedTime: getTimestamp() - sTime,
                   time: sTime,
-                  responseText: '',
+                  responseText: text,
                   traceId,
-                }
-              )
+                })
+              })
+              return res
+            },
+            (err: unknown) => {
+              triggerFetch(client, {
+                type: HttpTypes.FETCH,
+                url,
+                method,
+                status: 0,
+                reqData: interceptStr(
+                  typeof requestInit?.body === 'string' ? requestInit.body : '',
+                  2048
+                ),
+                sTime,
+                elapsedTime: getTimestamp() - sTime,
+                time: sTime,
+                responseText: '',
+                traceId,
+              })
               throw err
             }
           )

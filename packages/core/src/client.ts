@@ -16,6 +16,7 @@ import { SilentFlags } from './flags'
 import { Breadcrumb } from './breadcrumb'
 import { Options } from './options'
 import { TransportData } from './transportData'
+import { SessionManager } from './session'
 import { logToClient } from './external'
 import { logger, setPrivacyMaskEnabled } from '@simple-monitor/utils'
 
@@ -28,7 +29,9 @@ export class MonitorClient {
   readonly breadcrumb = new Breadcrumb()
   /** 配置中心 */
   readonly options = new Options()
-  /** 上报引擎（依赖 breadcrumb/options 注入） */
+  /** 会话与用户标识 */
+  readonly session = new SessionManager()
+  /** 上报引擎（依赖 breadcrumb/options/session 注入） */
   readonly transport: TransportData
 
   /** init 是否已成功执行（幂等依据） */
@@ -36,7 +39,11 @@ export class MonitorClient {
   private destroyed = false
 
   constructor() {
-    this.transport = new TransportData({ breadcrumb: this.breadcrumb, options: this.options })
+    this.transport = new TransportData({
+      breadcrumb: this.breadcrumb,
+      options: this.options,
+      session: this.session,
+    })
   }
 
   /**

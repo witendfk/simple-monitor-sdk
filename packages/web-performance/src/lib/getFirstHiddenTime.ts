@@ -9,7 +9,8 @@ import { onHidden } from './onHidden'
  *  - 「页面首次隐藏」是页面级事实，单例语义正确（与 ADR-1 不冲突）；
  *  - SSR 安全：无 document 时惰性返回 Infinity，不在模块顶层触碰 DOM。
  */
-let firstHiddenTime: number = typeof document !== 'undefined' && document.visibilityState === 'hidden' ? 0 : Infinity
+let firstHiddenTime: number =
+  typeof document !== 'undefined' && document.visibilityState === 'hidden' ? 0 : Infinity
 let bound = false
 
 function bindOnce(): void {
