@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { transportData } from '../../packages/core/src/transportData'
-import { options } from '../../packages/core/src/options'
+import { transportData } from '@simple-monitor/core'
+import { options } from '@simple-monitor/core'
 
 describe('disabled 配置', () => {
   afterEach(() => {

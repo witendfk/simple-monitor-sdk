@@ -34,6 +34,14 @@ describe('errorBoundaryReport', () => {
     expect(sent.componentName).toBe('anonymous')
   })
 
+  it('React 18+ componentStack（at Xxx 格式）也能提取组件名', () => {
+    errorBoundaryReport(new Error('render boom'), {
+      componentStack: '\n    at MyComp\n    at App\n    at div',
+    })
+    const sent = (transportData.send as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(sent.componentName).toBe('MyComp')
+  })
+
   it('componentStack 无匹配组件名时降级 anonymous', () => {
     errorBoundaryReport(new Error('x'), { componentStack: 'no component here' })
     const sent = (transportData.send as ReturnType<typeof vi.fn>).mock.calls[0][0]

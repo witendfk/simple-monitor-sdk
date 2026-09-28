@@ -1,16 +1,21 @@
 import {
   BreadCrumbTypes,
   ErrorTypes,
-  globalVar,
   Severity,
   SeverityUtils,
   MonitorHttp,
   ResourceErrorTarget,
+  IBreadcrumb,
+  ReportDataType,
 } from '@simple-monitor/types'
 import { getLocationHref, getTimestamp, interceptStr } from '@simple-monitor/utils'
-import { ReportDataType } from '@simple-monitor/types'
 import { getRealPath } from './errorId'
-import { breadcrumb } from './breadcrumb'
+
+/**
+ * 跨域/超时区分阈值：status=0 且耗时 <= 阈值判为跨域或域名不存在，否则判为超时。
+ * 纯参数注入（旧实现从 types globalVar 读模块常量）。
+ */
+export const CROSS_ORIGIN_THRESHOLD = 1000
 
 enum SpanStatus {
   Ok = 'ok',
@@ -73,14 +78,17 @@ interface TriggerConsole {
 /**
  * HTTP 错误分类 - 区分跨域限制、超时、不同 HTTP 状态码
  */
-export function httpTransform(data: MonitorHttp): ReportDataType {
+export function httpTransform(
+  data: MonitorHttp,
+  crossOriginThreshold: number = CROSS_ORIGIN_THRESHOLD
+): ReportDataType {
   let message = ''
   const { elapsedTime = 0, time, method = '', traceId, type, status = 0 } = data
   const name = `${type}--${method}`
 
   if (status === 0) {
     message =
-      elapsedTime <= globalVar.crossOriginThreshold
+      elapsedTime <= crossOriginThreshold
         ? 'http请求失败，失败原因：跨域限制或域名不存在'
         : 'http请求失败，失败原因：超时'
   } else {
@@ -134,19 +142,18 @@ export function resourceTransform(target: ResourceErrorTarget): ReportDataType {
 }
 
 /**
- * Console 集成 - 将 console 调用与 breadcrumbs 系统集成
+ * Console 集成 - 将 console 调用写入面包屑（受 breadcrumb 所在 client 的配置控制）。
+ * breadcrumb 参数注入（M1：不再隐式引用模块单例）。
  */
-export function handleConsole(data: TriggerConsole): void {
-  if (globalVar.isLogAddBreadcrumb) {
-    breadcrumb.push({
-      type: BreadCrumbTypes.CONSOLE,
-      category: breadcrumb.getCategory(BreadCrumbTypes.CONSOLE),
-      data: {
-        level: data.level,
-        args: data.args,
-      },
-      level: SeverityUtils.fromString(data.level),
-      time: getTimestamp(),
-    })
-  }
+export function handleConsole(data: TriggerConsole, breadcrumb: IBreadcrumb): void {
+  breadcrumb.push({
+    type: BreadCrumbTypes.CONSOLE,
+    category: breadcrumb.getCategory(BreadCrumbTypes.CONSOLE),
+    data: {
+      level: data.level,
+      args: data.args,
+    },
+    level: SeverityUtils.fromString(data.level),
+    time: getTimestamp(),
+  })
 }

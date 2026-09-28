@@ -12,6 +12,11 @@ export default defineConfig({
       '@simple-monitor/shared': pkgs('shared'),
       '@simple-monitor/utils': pkgs('utils'),
       '@simple-monitor/core': pkgs('core'),
+      '@simple-monitor/browser': pkgs('browser'),
+      '@simple-monitor/vue': pkgs('vue'),
+      '@simple-monitor/react': pkgs('react'),
+      '@simple-monitor/web-performance': pkgs('web-performance'),
+      '@simple-monitor/web': pkgs('web'),
     },
   },
 })

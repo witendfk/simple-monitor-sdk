@@ -1,6 +1,8 @@
 /**
- * 数据上报模块
- * 负责将转换后的数据组装成完整的上报 payload，并通过多种方式发送到服务端
+ * 数据上报模块（M1 类化，ADR-1）
+ *
+ * TransportData 不再是模块单例：breadcrumb / options 由 MonitorClient 构造时注入。
+ * 队列、卸载标记等状态全部随实例走。
  */
 
 import type {
@@ -10,6 +12,7 @@ import type {
   InitOptions,
   ITransportData,
   DeviceInfo,
+  IBreadcrumb,
 } from '@simple-monitor/types'
 import { isReportDataType, isPerformanceData } from '@simple-monitor/types'
 import {
@@ -22,11 +25,9 @@ import {
   validateOption,
   isEmpty,
 } from '@simple-monitor/utils'
-import { breadcrumb } from './breadcrumb'
 import { createErrorId } from './errorId'
-import { _support } from './global'
-import { options } from './options'
 import { SDK_VERSION, SDK_NAME } from '@simple-monitor/shared'
+import type { ClientOptions } from './options'
 
 // 获取全局对象
 const _global = getGlobal<any>()
@@ -46,6 +47,12 @@ function getDefaultTrackerId(): string {
   return newTrackerId
 }
 
+/** TransportData 的运行时依赖（由 client 注入） */
+export interface TransportDeps {
+  breadcrumb: IBreadcrumb
+  options: ClientOptions
+}
+
 /**
  * 数据上报类
  */
@@ -61,9 +68,18 @@ export class TransportData implements ITransportData {
   trackKey: string
   errorDsn: string
   trackDsn: string
-  private isUnloading = false
 
-  constructor() {
+  private readonly breadcrumb: IBreadcrumb
+  private readonly options: ClientOptions
+  /** 设备信息快照（采集端 setup 时写入，信封组装取用） */
+  deviceInfo?: DeviceInfo
+  /** 通道状态机：leaving = pagehide/hidden 离场中；回到可见即复位（修复旧版粘滞 bug） */
+  private channelLeaving = false
+  private unloadBound = false
+
+  constructor(deps: TransportDeps) {
+    this.breadcrumb = deps.breadcrumb
+    this.options = deps.options
     this.queue = new Queue()
     this.beforeDataReport = undefined
     this.backTrackerId = undefined
@@ -75,7 +91,6 @@ export class TransportData implements ITransportData {
     this.trackKey = ''
     this.errorDsn = ''
     this.trackDsn = ''
-    this.setupUnloadListener()
   }
 
   /**
@@ -137,20 +152,6 @@ export class TransportData implements ITransportData {
   }
 
   /**
-   * 获取 apikey
-   */
-  getApikey(): string {
-    return this.apikey
-  }
-
-  /**
-   * 获取 trackKey
-   */
-  getTrackKey(): string {
-    return this.trackKey
-  }
-
-  /**
    * 获取认证信息
    */
   getAuthInfo(): AuthInfo {
@@ -166,10 +167,10 @@ export class TransportData implements ITransportData {
   }
 
   /**
-   * 获取设备信息（优先从 _support 获取）
+   * 获取设备信息（采集端 setup 时写入 transportData.deviceInfo）
    */
   getDeviceInfo(): DeviceInfo | any {
-    return _support.deviceInfo || {}
+    return this.deviceInfo || {}
   }
 
   /**
@@ -178,7 +179,7 @@ export class TransportData implements ITransportData {
   getTransportData(data: FinalReportType): TransportDataType {
     return {
       authInfo: this.getAuthInfo(),
-      breadcrumb: breadcrumb.getStack(),
+      breadcrumb: this.breadcrumb.getStack(),
       data,
       deviceInfo: this.getDeviceInfo(),
     }
@@ -207,7 +208,7 @@ export class TransportData implements ITransportData {
   async beforePost(data: FinalReportType): Promise<TransportDataType | false> {
     // 如果是错误数据，生成 errorId（性能数据不去重，跳过）
     if (!isPerformanceData(data) && isReportDataType(data) && this.apikey) {
-      const errorId = createErrorId(data, this.apikey)
+      const errorId = createErrorId(data, this.apikey, this.options.maxDuplicateCount)
       if (errorId === null) {
         // 重复错误超过阈值，不上报
         return false
@@ -323,7 +324,7 @@ export class TransportData implements ITransportData {
   }
 
   /**
-   * 使用 navigator.sendBeacon 上报（页面卸载场景，浏览器保证发出）。
+   * 使用 navigator.sendBeacon 上报（离场场景，浏览器保证发出）。
    * 不可用或排队失败时降级到 xhrPost。数据以 JSON 字符串发送。
    */
   beaconPost(data: TransportDataType, url: string): void {
@@ -340,26 +341,34 @@ export class TransportData implements ITransportData {
   }
 
   /**
-   * 监听页面卸载（pagehide / visibilitychange→hidden）置 isUnloading 标记，
-   * send 据此切 sendBeacon 通道（XHR 在 unload 会丢数据）。非浏览器环境跳过。
+   * 监听页面离场（pagehide / visibilitychange→hidden 置位；
+   * pageshow / visibilitychange→visible 复位）。
+   *
+   * 修复旧版粘滞 bug：旧实现 hidden 后永不复位，用户切走再切回后
+   * 所有上报永久走 sendBeacon（configReportXhr 失效、64KB 上限、无重试）。
    */
-  private setupUnloadListener(): void {
-    // 非浏览器环境（无 addEventListener / document）跳过；
-    // 用 _global 而非直接 window/document，保持 core 框架无关、不依赖 DOM 类型
+  bindLifecycle(): void {
+    if (this.unloadBound) return
     if (!_global || typeof _global.addEventListener !== 'function') return
-    const markUnloading = (): void => {
-      this.isUnloading = true
+    this.unloadBound = true
+    const markLeaving = (): void => {
+      this.channelLeaving = true
+    }
+    const markBack = (): void => {
+      this.channelLeaving = false
     }
     try {
-      _global.addEventListener('pagehide', markUnloading)
+      _global.addEventListener('pagehide', markLeaving)
+      _global.addEventListener('pageshow', markBack)
       const doc = _global.document
       if (doc && typeof doc.addEventListener === 'function') {
         doc.addEventListener('visibilitychange', () => {
-          if (doc.visibilityState === 'hidden') markUnloading()
+          if (doc.visibilityState === 'hidden') markLeaving()
+          else markBack()
         })
       }
     } catch (error) {
-      logger.error('setupUnloadListener error:', error)
+      logger.error('bindLifecycle error:', error)
     }
   }
 
@@ -369,7 +378,7 @@ export class TransportData implements ITransportData {
    */
   async send(data: FinalReportType): Promise<void> {
     // disabled：完全关闭上报（采集器仍装载、面包屑仍记录，但不发出请求）
-    if (options.disabled) return
+    if (this.options.disabled) return
     let dsn = ''
 
     // 判断数据类型并选择对应的 DSN
@@ -413,8 +422,8 @@ export class TransportData implements ITransportData {
     // 根据环境选择上报方式
     if (isBrowserEnv) {
       if (this.useImgUpload) return this.imgRequest(result, dsn)
-      // 页面卸载时优先 sendBeacon（浏览器保证发出，XHR 在 unload 会丢）
-      if (this.isUnloading) return this.beaconPost(result, dsn)
+      // 页面离场时优先 sendBeacon（浏览器保证发出，XHR 在 unload 会丢）
+      if (this.channelLeaving) return this.beaconPost(result, dsn)
       return this.xhrPost(result, dsn)
     }
     if (isWxMiniEnv) {
@@ -422,7 +431,3 @@ export class TransportData implements ITransportData {
     }
   }
 }
-
-const transportData = _support.transportData || (_support.transportData = new TransportData())
-
-export { transportData }

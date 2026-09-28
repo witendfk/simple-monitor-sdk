@@ -8,7 +8,8 @@
  *  - 评分用 Chrome 对数正态分布模型
  *  - RT（Resource Timing）：定位慢资源文件，单文件 duration >= 阈值即上报
  */
-import type { IConfig, IWebVitals, IMetricsObj } from './types'
+import type { IConfig, IWebVitals, IMetricsObj, IEventSource } from './types'
+export type { IEventSource } from './types'
 import generateUniqueID from './utils/generateUniqueID'
 import { afterLoad, beforeUnload, unload } from './utils'
 import { onHidden } from './lib/onHidden'
@@ -29,13 +30,20 @@ import { initCLS } from './metrics/getCLS'
 import { initCCP } from './metrics/getCCP'
 import { initResourceTiming } from './metrics/getResourceTiming'
 
+// 模块级句柄（getCurrentMetrics/setEndMark 等实例 API 需要访问最近一次构造的实例状态）。
+// 多实例时后者覆盖前者——构造期即覆盖，各实例回调闭包各自持有引用不受影响；
+// 彻底实例化留待 M2（总纲 ADR-1 收尾项）。
 let metricsStore: MetricsStore
 let reporter: ReturnType<typeof createReporter>
 
 class WebVitals implements IWebVitals {
-  immediately: boolean
+  immediately: boolean = false
 
   constructor(config: IConfig) {
+    if (typeof window === 'undefined') {
+      // SSR 安全：性能采集依赖浏览器 API，服务端渲染环境直接跳过
+      return
+    }
     const {
       appId,
       version,
@@ -50,6 +58,7 @@ class WebVitals implements IWebVitals {
       scoreConfig = {},
       resourceThreshold = 300,
       resourceTopN = 10,
+      eventSource,
     } = config
 
     this.immediately = immediately
@@ -73,7 +82,8 @@ class WebVitals implements IWebVitals {
       excludeRemotePath,
       maxWaitCCPDuration,
       immediately,
-      scoreConfig
+      scoreConfig,
+      eventSource as IEventSource | undefined
     )
     // 资源耗时：hidden/unload 采集慢资源 Top-N（自身注册监听，阈值可配）
     initResourceTiming(metricsStore, reporter, resourceThreshold, resourceTopN)

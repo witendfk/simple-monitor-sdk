@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ErrorTypes, EventTypes, BreadCrumbTypes } from '@simple-monitor/types'
-import { setFlag } from '@simple-monitor/utils'
+import { getDefaultMonitorClient, transportData, breadcrumb } from '@simple-monitor/core'
 import { MonitorVue } from '../../packages/vue/src/index'
-import { transportData, breadcrumb } from '@simple-monitor/core'
+
+const client = getDefaultMonitorClient()
 
 describe('MonitorVue', () => {
   beforeEach(() => {
     vi.spyOn(transportData, 'send').mockResolvedValue(undefined)
     breadcrumb.clear()
-    setFlag(EventTypes.VUE, false)
+    client.setSilent(EventTypes.VUE, false)
   })
   afterEach(() => {
     vi.restoreAllMocks()
-    setFlag(EventTypes.VUE, false)
+    client.setSilent(EventTypes.VUE, false)
   })
 
   it('install 重写 errorHandler，捕获错误为 VUE_ERROR 并带上组件名', () => {
@@ -29,7 +30,7 @@ describe('MonitorVue', () => {
     const sent = (transportData.send as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(sent.type).toBe(ErrorTypes.VUE_ERROR)
     expect(sent.componentName).toBe('MyComp')
-    expect(sent.propsData).toBe('render')
+    expect(sent.errorInfo).toBe('render')
   })
 
   it('组件名拿不到时记 anonymous', () => {
@@ -58,7 +59,7 @@ describe('MonitorVue', () => {
   })
 
   it('silentVue 时不上报', () => {
-    setFlag(EventTypes.VUE, true)
+    client.setSilent(EventTypes.VUE, true)
     const app = { config: {} as Record<string, unknown> }
     MonitorVue.install(app)
     ;(app.config!.errorHandler as (err: unknown, instance: unknown, info: string) => unknown)(

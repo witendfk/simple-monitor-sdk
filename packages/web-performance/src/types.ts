@@ -18,6 +18,11 @@ export interface IConfig {
   resourceThreshold?: number
   /** 慢资源 Top-N 数量，默认 10 */
   resourceTopN?: number
+  /**
+   * 请求/路由事件源（ADR-3 统一拦截层）：web 门面注入 core 总线适配器，
+   * 引擎不再自行劫持 xhr/fetch/history；独立使用不传，走自有 proxy 兜底。
+   */
+  eventSource?: IEventSource
 }
 
 export interface IPerformanceNavigationTiming {
@@ -171,4 +176,20 @@ declare global {
     __monitor_fetch__: boolean
     __monitor_sessionId__: string
   }
+}
+
+/**
+ * 请求/路由事件源（ADR-3：统一拦截层）。
+ * 走 web 门面时由门面把 core 事件总线适配成本接口注入——
+ * 性能引擎订阅数据而不再自行劫持 xhr/fetch/history，消灭双层包装；
+ * 独立使用（不注入）时引擎保持自有 proxy 兜底。
+ */
+export interface IEventSource {
+  /**
+   * 订阅请求完成事件：每个业务请求（含失败）结束时回调一次 url。
+   * 由 core 总线的 xhr/fetch 事件适配（monitorXhr.url / MonitorHttp.url）。
+   */
+  onRequest(complete: (url: string) => void): void
+  /** 订阅 SPA 路由变化（pushState/replaceState/hashchange/popstate 归一） */
+  onRoute(cb: () => void): void
 }

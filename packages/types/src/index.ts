@@ -29,9 +29,6 @@ export * from './common'
 // Replace types
 export * from './replace'
 
-// Track types
-export * from './track'
-
 // Log types
 export * from './log'
 

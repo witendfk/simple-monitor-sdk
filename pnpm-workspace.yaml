@@ -1,4 +1,5 @@
 packages:
   - 'packages/*'
-allowBuilds:
-  esbuild: set this to true or false
+# pnpm 10 构建脚本审批：esbuild 的 postinstall 需要显式允许
+onlyBuiltDependencies:
+  - esbuild

@@ -4,7 +4,7 @@
  */
 
 import { ErrorTypes, BreadCrumbTypes, Severity, SeverityUtils } from '@simple-monitor/types'
-import type { LogTypes } from '@simple-monitor/types'
+import type { LogTypes, IBreadcrumb } from '@simple-monitor/types'
 import {
   isError,
   extractErrorStack,
@@ -14,53 +14,16 @@ import {
   isWxMiniEnv,
   getCurrentRoute,
 } from '@simple-monitor/utils'
-import { transportData } from './transportData'
-import { breadcrumb } from './breadcrumb'
+import type { MonitorClient } from './client'
+import { getDefaultMonitorClient } from './global'
 
 /**
- * 手动上报日志
- *
- * @param options 日志配置
- * @param options.message 日志内容
- * @param options.tag 自定义标签，用于分类筛选
- * @param options.level 日志级别（默认 Critical）
- * @param options.ex 异常对象，会提取堆栈信息
- * @param options.type 错误类型（默认 LOG_ERROR）
- *
- * @example
- * ```typescript
- * import { log } from 'simple-monitor'
- * import { Severity } from '@simple-monitor/types'
- *
- * // 捕获业务异常并上报
- * try {
- *   processPayment()
- * } catch (err) {
- *   log({
- *     message: '支付处理失败',
- *     tag: 'payment',
- *     level: Severity.Critical,
- *     ex: err,
- *   })
- * }
- *
- * // 记录业务状态
- * if (userBalance < 0) {
- *   log({
- *     message: '用户余额异常',
- *     tag: 'balance_check',
- *     level: Severity.Warning,
- *   })
- * }
- * ```
+ * 将一条手动日志写入指定 client（面包屑 + send）
  */
-export function log({
-  message = 'emptyMsg',
-  tag = '',
-  level = Severity.Critical,
-  ex = '',
-  type = ErrorTypes.LOG_ERROR,
-}: LogTypes): void {
+export function logToClient(
+  { message = 'emptyMsg', tag = '', level = Severity.Critical, ex = '', type = ErrorTypes.LOG_ERROR }: LogTypes,
+  client: MonitorClient
+): void {
   // 如果是 Error 对象，提取堆栈信息
   let errorInfo: any = {}
   if (isError(ex)) {
@@ -83,6 +46,7 @@ export function log({
   }
 
   // 添加到用户行为栈
+  const breadcrumb: IBreadcrumb = client.breadcrumb
   breadcrumb.push({
     type: BreadCrumbTypes.CUSTOMER,
     category: breadcrumb.getCategory(BreadCrumbTypes.CUSTOMER),
@@ -91,5 +55,12 @@ export function log({
   })
 
   // 发送到服务端
-  transportData.send(error)
+  client.send(error)
+}
+
+/**
+ * 手动上报日志（默认 client 的便捷入口）
+ */
+export function log(options: LogTypes): void {
+  logToClient(options, getDefaultMonitorClient())
 }

@@ -1,75 +1,47 @@
 /**
- * SDK 全局变量管理
- * 包含 SDK 特定的全局状态
+ * SDK 全局承载（M1 瘦身，ADR-1）
+ *
+ * 旧实现把 breadcrumb / transportData / options / replaceFlag 等 N 个单例全挂在
+ * window.__Monitor__ 上——多实例互串、SSR 崩溃、测试无法隔离的总根源。
+ *
+ * 现在全局对象只承载一件事：默认 MonitorClient 实例（跨 bundle 实例共享用）。
+ * 所有模块状态随 client 实例走，见 client.ts。
  */
 
-import {
-  MonitorSupport,
-  EventTypes,
-  WxAppEvents,
-  WxPageEvents,
-  InitOptions,
-} from '@simple-monitor/types'
-import { getGlobal, logger, setFlag } from '@simple-monitor/utils'
+import { MonitorClient } from './client'
 
-/**
- * 获取全局对象
- */
-const _global = getGlobal<any>()
+// 兼容旧导出：实现已移至 utils（消除 global → client → breadcrumb → global 循环依赖）
+export { silentConsoleScope } from '@simple-monitor/utils'
 
-/**
- * 获取或初始化 SDK 全局支持对象
- */
-export function getGlobalMonitorSupport(): MonitorSupport {
-  _global.__Monitor__ = _global.__Monitor__ || ({} as MonitorSupport)
-  return _global.__Monitor__
+/** 全局唯一承载点：仅存默认 client，不再存散装单例 */
+const GLOBAL_KEY = '__Monitor__'
+
+interface MonitorCarrier {
+  defaultClient?: MonitorClient
 }
 
-/**
- * SDK 全局支持对象
- */
-export const _support = getGlobalMonitorSupport()
+function getGlobalThis(): any {
+  return typeof globalThis !== 'undefined' ? globalThis : {}
+}
 
-/**
- * 静默控制台作用域
- * 在回调执行期间禁用日志记录
- * @param callback 要执行的回调函数
- */
-export function silentConsoleScope<T>(callback: () => T): T {
-  const prevStatus = logger.getEnableStatus()
-  logger.disable()
-  try {
-    return callback()
-  } finally {
-    if (prevStatus) {
-      logger.enable()
-    }
+function getCarrier(): MonitorCarrier {
+  const carrier = getGlobalThis()
+  if (!carrier[GLOBAL_KEY]) {
+    carrier[GLOBAL_KEY] = {} as MonitorCarrier
   }
+  return carrier[GLOBAL_KEY]
 }
 
-// 重新导出 utils 中的函数
-export { getGlobal } from '@simple-monitor/utils'
+/** 取/建默认 client（跨 bundle 实例，如 ESM+CJS 混载，共享同一个） */
+export function getDefaultMonitorClient(): MonitorClient {
+  const carrier = getCarrier()
+  if (!carrier.defaultClient) {
+    carrier.defaultClient = new MonitorClient()
+  }
+  return carrier.defaultClient
+}
 
-/**
- * 设置静默标志
- * 根据用户配置控制各类事件是否静默
- */
-export function setSilentFlag(paramOptions: InitOptions = {}): void {
-  setFlag(EventTypes.XHR, !!paramOptions.silentXhr)
-  setFlag(EventTypes.FETCH, !!paramOptions.silentFetch)
-  setFlag(EventTypes.CONSOLE, !!paramOptions.silentConsole)
-  setFlag(EventTypes.DOM, !!paramOptions.silentDom)
-  setFlag(EventTypes.HISTORY, !!paramOptions.silentHistory)
-  setFlag(EventTypes.ERROR, !!paramOptions.silentError)
-  setFlag(EventTypes.HASHCHANGE, !!paramOptions.silentHashchange)
-  setFlag(EventTypes.UNHANDLEDREJECTION, !!paramOptions.silentUnhandledrejection)
-  setFlag(EventTypes.VUE, !!paramOptions.silentVue)
-  // wx App
-  setFlag(WxAppEvents.AppOnError, !!paramOptions.silentWxOnError)
-  setFlag(WxAppEvents.AppOnUnhandledRejection, !!paramOptions.silentUnhandledrejection)
-  setFlag(WxAppEvents.AppOnPageNotFound, !!paramOptions.silentWxOnPageNotFound)
-  // wx Page
-  setFlag(WxPageEvents.PageOnShareAppMessage, !!paramOptions.silentWxOnShareAppMessage)
-  // mini Route
-  setFlag(EventTypes.MINI_ROUTE, !!paramOptions.silentMiniRoute)
+/** 测试/重置用：丢弃默认 client（下次取用重新创建） */
+export function resetDefaultMonitorClient(): void {
+  getCarrier().defaultClient = undefined
 }

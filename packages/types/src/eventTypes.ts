@@ -32,6 +32,8 @@ export enum EventTypes {
   ERROR = 'error',
   HASHCHANGE = 'hashchange',
   UNHANDLEDREJECTION = 'unhandledrejection',
+  /** 资源加载错误独立事件通道（capture 阶段 error 事件分流） */
+  RESOURCE_ERROR_EVENT = 'resourceError',
   MONITOR = 'monitor',
   VUE = 'Vue',
   MINI_ROUTE = 'miniRoute',

@@ -1,38 +1,21 @@
 import { getAppId, isWxMiniEnv, variableTypeDetection } from '@simple-monitor/utils'
 import { ErrorTypes, EventTypes, ReportDataType } from '@simple-monitor/types'
-import { getGlobal } from '@simple-monitor/utils'
-import { options } from './options'
-
-const _global = getGlobal<any>()
-
-/** 框架无关地拿到 sessionStorage（类型用局部声明，core 的 tsconfig 不引 DOM lib）。 */
-interface SessionStorageLike {
-  getItem(key: string): string | null
-  setItem(key: string, value: string): void
-  removeItem(key: string): void
-  key(index: number): string | null
-  readonly length: number
-}
-
-/**
- * 安全取得 sessionStorage 引用：从 _global 取，core 保持框架无关、不裸用 DOM 全局。
- * 非浏览器（SSR / 测试 node 环境）或存储被禁用时返回 null，降级为纯内存去重。
- */
-function safeSessionStorage(): SessionStorageLike | null {
-  try {
-    const storage = _global.sessionStorage
-    return storage ? (storage as SessionStorageLike) : null
-  } catch {
-    // 访问 sessionStorage 本身在某些浏览器会抛（如禁用 cookie）
-    return null
-  }
-}
 
 /**
  * generate error unique Id
- * @param data
+ *
+ * 指纹取舍（总纲 §五规格 1）：SDK 侧为 message 级 hash——目的是流量去重防刷屏，
+ * 不含堆栈/行列；分析精度由服务端 fingerprint（含首帧位置）负责。两层分工。
+ *
+ * @param data 错误上报数据
+ * @param apikey 项目标识（隔离不同项目的去重计数）
+ * @param maxDuplicateCount 同指纹最大上报次数，超过返回 null（调用方跳过上报）
  */
-export function createErrorId(data: ReportDataType, apikey: string): number | null {
+export function createErrorId(
+  data: ReportDataType,
+  apikey: string,
+  maxDuplicateCount = 2
+): number | null {
   let idStr: string
   const errorType = data.type ?? ErrorTypes.UNKNOWN
   switch (errorType) {
@@ -60,7 +43,6 @@ export function createErrorId(data: ReportDataType, apikey: string): number | nu
       break
   }
   const id = hashCode(idStr)
-  const maxDuplicateCount = options.maxDuplicateCount ?? 2
   if (getDedupCount(id) >= maxDuplicateCount) {
     return null
   }
@@ -76,13 +58,38 @@ export function createErrorId(data: ReportDataType, apikey: string): number | nu
  *  - 内存 cache：命中时不读存储，避免每次上报都走同步 IO。
  *  - sessionStorage：刷新后仍保留，关闭标签页自动清空——语义对齐「同一会话内的去重」。
  *
- * 跨标签页不共享是 sessionStorage 的特性，通常可接受（多开同页是少数场景），
- * 且免去了 localStorage 的过期清理负担。真正跨设备/长期的去重是服务端职责。
+ * 去重状态天然属于「标签页/会话」而非 SDK 实例，因此保留模块级实现（与 ADR-1 不冲突：
+ * 多实例共享同一会话的去重预算正是预期行为）。跨标签页不共享是 sessionStorage 的特性，
+ * 真正跨设备/长期的去重是服务端职责。
  *
  * 存储失败（隐私模式、配额超限）时降级为纯内存，退化后不劣于原实现。
  */
 const DEDUP_KEY_PREFIX = 'monitor:dedup:'
 const dedupCache: Record<string, number> = {}
+
+/** 框架无关地拿到 sessionStorage（core 的 tsconfig 不引 DOM lib） */
+interface SessionStorageLike {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+  key(index: number): string | null
+  readonly length: number
+}
+
+function safeSessionStorage(): SessionStorageLike | null {
+  try {
+    const storage = getGlobalThis()?.sessionStorage
+    return storage ? (storage as SessionStorageLike) : null
+  } catch {
+    // 访问 sessionStorage 本身在某些浏览器会抛（如禁用 cookie）
+    return null
+  }
+}
+
+/** SSR 安全的全局对象获取（core 不引 DOM lib） */
+function getGlobalThis(): any {
+  return typeof globalThis !== 'undefined' ? globalThis : undefined
+}
 
 /** 读取某条错误在本会话内已上报次数（命中内存则不读存储）。 */
 function getDedupCount(id: number): number {
@@ -176,12 +183,7 @@ function objectOrder(reason: any): string {
  * http://.../api/123/user/456 => http://.../api/{param}/user/{param}
  *
  * 归一化规则：去掉 query/hash，把任意位置的「纯数字段」换成 {param}。
- * 只匹配整段为数字的路径段（/123/、/456），不误伤版本号（/v2/）或字母混合段。
- *
- * http://.../project?id=1#a => http://.../project
- * http://.../id/123=> http://.../id/{param}
- *
- * @param url
+ * 只匹配整段为数字的路径段，不误伤版本号（/v2/）或字母混合段。
  */
 export function getRealPath(url: string): string {
   return url
@@ -190,32 +192,13 @@ export function getRealPath(url: string): string {
 }
 
 /**
- *
- * @param url
+ * 小程序环境下页面 origin 归一为 appId（wx 采集包实装时启用）。
  */
-export function getFlutterRealOrigin(url: string): string {
-  // for apple
-  return removeHashPath(getFlutterRealPath(url))
-}
-
-export function getFlutterRealPath(url: string): string {
-  // for apple
-  return url.replace(/(\S+)(\/Documents\/)(\S*)/, `$3`)
-}
-
 export function getRealPageOrigin(url: string): string {
-  const fileStartReg = /^file:\/\//
-  if (fileStartReg.test(url)) {
-    return getFlutterRealOrigin(url)
-  }
   if (isWxMiniEnv) {
     return getAppId()
   }
-  return getRealPath(removeHashPath(url).replace(/(\S*)(\/\/)(\S+)/, '$3'))
-}
-
-export function removeHashPath(url: string): string {
-  return url.replace(/(\S+)(\/#\/)(\S*)/, `$1`)
+  return getRealPath(url)
 }
 
 export function hashCode(str: string): number {

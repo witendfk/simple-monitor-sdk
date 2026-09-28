@@ -55,31 +55,4 @@ export function supportsHistory(): boolean {
   return !isChromePackagedApp && hasHistoryApi
 }
 
-/**
- * 替换标志位管理
- * 用于防止重复替换原生方法
- */
-interface ReplaceFlagMap {
-  [key: string]: boolean
-}
-
-const replaceFlag: ReplaceFlagMap = {}
-
-/**
- * 设置替换标志
- * @param replaceType 替换类型
- * @param isSet 是否已设置
- */
-export function setFlag(replaceType: string, isSet: boolean): void {
-  if (replaceFlag[replaceType]) return
-  replaceFlag[replaceType] = isSet
-}
-
-/**
- * 获取替换标志状态
- * @param replaceType 替换类型
- * @returns 是否已设置
- */
-export function getFlag(replaceType: string): boolean {
-  return replaceFlag[replaceType] ? true : false
-}
+/** 框架无关地检测 history API 可用性（浏览器打包 App 内 history 被禁用的场景） */

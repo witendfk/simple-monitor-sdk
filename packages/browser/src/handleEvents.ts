@@ -1,37 +1,35 @@
 /**
  * 事件处理器（handleEvents）
  *
- * 每个 handler 通过 subscribeEvent 注册一条「订阅 + transform + send」的同质逻辑。
+ * 每个 handler 通过 client.registry 注册一条「订阅 + transform + send」的同质逻辑。
  * 只暴露处理入口，不直接绑定原生 API——那是 replace.ts 的职责。
+ *
+ * M1：全部 handler 接收 client（静默开关 / 面包屑 / 上报 / filterXhrUrlRegExp 均从实例读），
+ * 显式注册 id 保证幂等（ADR-1 / 总纲 §3.3）。
  */
 
-import { EventTypes, ErrorTypes, Severity, BreadCrumbTypes, HttpTypes } from '@simple-monitor/types'
-import { extractErrorStack, getFlag, getTimestamp } from '@simple-monitor/utils'
 import {
-  breadcrumb,
-  transportData,
-  subscribeEvent,
-  resourceTransform,
-  httpTransform,
-  handleConsole,
-  options,
-} from '@simple-monitor/core'
-
+  EventTypes,
+  ErrorTypes,
+  Severity,
+  BreadCrumbTypes,
+  HttpTypes,
+} from '@simple-monitor/types'
+import { extractErrorStack, getTimestamp } from '@simple-monitor/utils'
+import { resourceTransform, httpTransform } from '@simple-monitor/core'
+import { handleConsole } from '@simple-monitor/core'
+import type { MonitorClient } from '@simple-monitor/core'
 import type { ResourceErrorTarget, MonitorHttp } from '@simple-monitor/types'
 
 /**
- * 资源错误的事件总线通道名。
+ * 订阅 JS 运行时错误（window error 事件分流后的代码错误通道）
  */
-export const RESOURCE_ERROR_EVENT = 'resourceError'
-
-/**
- * 订阅 JS 运行时错误（window.onerror / 资源 error 经分流后也走这里）
- */
-export function handleError(): void {
-  subscribeEvent({
+export function handleError(client: MonitorClient): void {
+  client.registry.subscribe({
     type: EventTypes.ERROR,
+    id: 'browser.js-error',
     callback: (data) => {
-      if (getFlag(EventTypes.ERROR)) return
+      if (client.isSilent(EventTypes.ERROR)) return
 
       const errorObj = (data && data.error) || data
       const parsed = extractErrorStack(errorObj, Severity.Normal)
@@ -39,39 +37,41 @@ export function handleError(): void {
 
       parsed.type = ErrorTypes.JAVASCRIPT_ERROR
 
-      breadcrumb.push({
+      client.breadcrumb.push({
         type: BreadCrumbTypes.CODE_ERROR,
-        category: breadcrumb.getCategory(BreadCrumbTypes.CODE_ERROR),
+        category: client.breadcrumb.getCategory(BreadCrumbTypes.CODE_ERROR),
         data: parsed,
         level: Severity.Normal,
         time: parsed.time,
       })
 
-      transportData.send(parsed)
+      client.transport.send(parsed)
     },
   })
 }
 
 /**
- * 订阅资源加载错误（<img>/<script>/<link> 的 error 事件）
+ * 订阅资源加载错误（<img>/<script>/<link> 的 error 事件）。
+ * 独立开关 silentResource（旧版被 silentError 连带静默且无法单独控制——已修复）。
  */
-export function handleResourceError(): void {
-  subscribeEvent({
-    type: RESOURCE_ERROR_EVENT,
+export function handleResourceError(client: MonitorClient): void {
+  client.registry.subscribe({
+    type: EventTypes.RESOURCE_ERROR_EVENT,
+    id: 'browser.resource-error',
     callback: (data: ResourceErrorTarget) => {
-      if (getFlag(EventTypes.ERROR)) return
+      if (client.isSilent(EventTypes.RESOURCE_ERROR_EVENT)) return
 
       const parsed = resourceTransform(data)
 
-      breadcrumb.push({
+      client.breadcrumb.push({
         type: BreadCrumbTypes.RESOURCE,
-        category: breadcrumb.getCategory(BreadCrumbTypes.RESOURCE),
+        category: client.breadcrumb.getCategory(BreadCrumbTypes.RESOURCE),
         data: parsed,
         level: Severity.Low,
         time: parsed.time,
       })
 
-      transportData.send(parsed)
+      client.transport.send(parsed)
     },
   })
 }
@@ -79,11 +79,12 @@ export function handleResourceError(): void {
 /**
  * 订阅未捕获的 Promise rejection。
  */
-export function handleUnhandledRejection(): void {
-  subscribeEvent({
+export function handleUnhandledRejection(client: MonitorClient): void {
+  client.registry.subscribe({
     type: EventTypes.UNHANDLEDREJECTION,
+    id: 'browser.unhandledrejection',
     callback: (reason: unknown) => {
-      if (getFlag(EventTypes.UNHANDLEDREJECTION)) return
+      if (client.isSilent(EventTypes.UNHANDLEDREJECTION)) return
 
       const source =
         reason instanceof Error
@@ -95,15 +96,15 @@ export function handleUnhandledRejection(): void {
 
       parsed.type = ErrorTypes.PROMISE_ERROR
 
-      breadcrumb.push({
+      client.breadcrumb.push({
         type: BreadCrumbTypes.UNHANDLEDREJECTION,
-        category: breadcrumb.getCategory(BreadCrumbTypes.UNHANDLEDREJECTION),
+        category: client.breadcrumb.getCategory(BreadCrumbTypes.UNHANDLEDREJECTION),
         data: parsed,
         level: Severity.Low,
         time: parsed.time,
       })
 
-      transportData.send(parsed)
+      client.transport.send(parsed)
     },
   })
 }
@@ -122,45 +123,63 @@ function stringifyReason(reason: unknown): string {
 }
 
 /**
- * 订阅 XHR / Fetch 请求事件。
+ * 订阅 XHR / Fetch 请求事件（两条通道共用 dispatch）。
  * httpTransform 规范化后：所有请求进面包屑，
  * 仅失败请求（status===0 跨域/超时，或 status>=400）才上报为 FETCH_ERROR。
+ *
+ * filterXhrUrlRegExp 在此集中消费：命中则完全不监控该请求（敏感接口排除）。
  */
-export function handleHttp(): void {
+export function handleHttp(client: MonitorClient): void {
   const dispatch = (data: MonitorHttp): void => {
-    const silent = data.type === HttpTypes.XHR ? getFlag(EventTypes.XHR) : getFlag(EventTypes.FETCH)
+    const silent =
+      data.type === HttpTypes.XHR
+        ? client.isSilent(EventTypes.XHR)
+        : client.isSilent(EventTypes.FETCH)
     if (silent) return
+
+    // 敏感接口过滤（旧版配置只存不用——现在真正生效）
+    const filter = client.options.filterXhrUrlRegExp
+    if (filter && data.url && filter.test(data.url)) return
 
     const parsed = httpTransform(data)
     const isError = data.status === 0 || (data.status ?? 0) >= 400
     const crumbType = data.type === HttpTypes.XHR ? BreadCrumbTypes.XHR : BreadCrumbTypes.FETCH
 
-    breadcrumb.push({
+    client.breadcrumb.push({
       type: crumbType,
-      category: breadcrumb.getCategory(crumbType),
+      category: client.breadcrumb.getCategory(crumbType),
       data: parsed,
       level: isError ? Severity.Error : Severity.Info,
       time: data.time,
     })
 
     if (isError) {
-      transportData.send(parsed)
+      client.transport.send(parsed)
     }
   }
 
-  subscribeEvent({ type: EventTypes.XHR, callback: dispatch })
-  subscribeEvent({ type: EventTypes.FETCH, callback: dispatch })
+  client.registry.subscribe({
+    type: EventTypes.XHR,
+    id: 'browser.http-xhr',
+    callback: dispatch,
+  })
+  client.registry.subscribe({
+    type: EventTypes.FETCH,
+    id: 'browser.http-fetch',
+    callback: dispatch,
+  })
 }
 
 /**
- * 订阅 console 调用 → 写入面包屑（core handleConsole 决定是否记录）。
+ * 订阅 console 调用 → 写入面包屑。
  */
-export function handleConsoleEvent(): void {
-  subscribeEvent({
+export function handleConsoleEvent(client: MonitorClient): void {
+  client.registry.subscribe({
     type: EventTypes.CONSOLE,
+    id: 'browser.console',
     callback: (data: { level: string; args: unknown[] }) => {
-      if (getFlag(EventTypes.CONSOLE)) return
-      handleConsole(data)
+      if (client.isSilent(EventTypes.CONSOLE)) return
+      handleConsole(data, client.breadcrumb)
     },
   })
 }
@@ -168,13 +187,14 @@ export function handleConsoleEvent(): void {
 /**
  * 订阅 DOM 点击 → 写入面包屑（还原用户操作链）。
  */
-export function handleDomEvent(): void {
-  subscribeEvent({
+export function handleDomEvent(client: MonitorClient): void {
+  client.registry.subscribe({
     type: EventTypes.DOM,
+    id: 'browser.dom-click',
     callback: (data: { category: string; data: string }) => {
-      breadcrumb.push({
+      client.breadcrumb.push({
         type: BreadCrumbTypes.CLICK,
-        category: breadcrumb.getCategory(BreadCrumbTypes.CLICK),
+        category: client.breadcrumb.getCategory(BreadCrumbTypes.CLICK),
         data,
         level: Severity.Info,
         time: getTimestamp(),
@@ -186,12 +206,12 @@ export function handleDomEvent(): void {
 /**
  * 订阅路由变化 → 触发 onRouteChange 钩子 + 写入面包屑。
  */
-export function handleHistoryEvent(): void {
-  subscribeEvent({
+export function handleHistoryEvent(client: MonitorClient): void {
+  client.registry.subscribe({
     type: EventTypes.HISTORY,
+    id: 'browser.history',
     callback: (data: { from: string; to: string }) => {
-      const hook = (options as { onRouteChange?: (from: string, to: string) => unknown })
-        .onRouteChange
+      const hook = client.options.onRouteChange
       if (typeof hook === 'function') {
         try {
           hook(data.from, data.to)
@@ -200,9 +220,9 @@ export function handleHistoryEvent(): void {
         }
       }
 
-      breadcrumb.push({
+      client.breadcrumb.push({
         type: BreadCrumbTypes.ROUTE,
-        category: breadcrumb.getCategory(BreadCrumbTypes.ROUTE),
+        category: client.breadcrumb.getCategory(BreadCrumbTypes.ROUTE),
         data,
         level: Severity.Info,
         time: getTimestamp(),

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { transportData } from '../../packages/core/src/transportData'
+import { transportData } from '@simple-monitor/core'
 import { logger } from '@simple-monitor/utils'
 
 /**

@@ -138,3 +138,21 @@ export function getLogger(): Logger {
  * 导出默认 logger 实例
  */
 export const logger = getLogger()
+
+/**
+ * 静默控制台作用域：callback 执行期间临时关闭 logger 输出。
+ * 用途：SDK 内部执行用户钩子（如 beforePushBreadcrumb）时，
+ * 防止钩子内日志被 console 采集器再采集形成自环。
+ * 异常不吞——由上层错误隔离机制处理。
+ */
+export function silentConsoleScope<T>(callback: () => T): T {
+  const prevStatus = logger.getEnableStatus()
+  logger.disable()
+  try {
+    return callback()
+  } finally {
+    if (prevStatus) {
+      logger.enable()
+    }
+  }
+}

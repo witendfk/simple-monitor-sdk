@@ -1,5 +1,4 @@
 import { BreadcrumbPushData } from './breadcrumb'
-import { EActionType } from './track'
 import { DeviceInfo } from './device'
 import { ErrorData } from './error'
 import { InitOptions } from './options'
@@ -20,13 +19,9 @@ export interface TransportDataType {
   deviceInfo?: DeviceInfo
 }
 
-export type FinalReportType = ReportDataType | TrackReportData | PerformanceReportData
+export type FinalReportType = ReportDataType | PerformanceReportData
 
-interface ICommonDataType {
-  isTrackData?: boolean
-}
-
-export interface ReportDataType extends ICommonDataType {
+export interface ReportDataType {
   type?: string
   message?: string
   url: string
@@ -54,23 +49,8 @@ export interface ReportDataType extends ICommonDataType {
   customTag?: string
 }
 
-export interface TrackReportData extends ICommonDataType {
-  // uuid
-  id?: string
-  // 埋点code
-  trackId?: string
-  // 埋点类型
-  actionType: EActionType
-  // 埋点开始时间
-  startTime?: number
-  // 埋点停留时间
-  durationTime?: number
-  // 上报时间
-  trackTime?: number
-}
-
-export function isReportDataType(data: ReportDataType | TrackReportData): data is ReportDataType {
-  return (<TrackReportData>data).actionType === undefined && !data.isTrackData
+export function isReportDataType(data: FinalReportType): data is ReportDataType {
+  return !(data as PerformanceReportData).eventType
 }
 
 /**

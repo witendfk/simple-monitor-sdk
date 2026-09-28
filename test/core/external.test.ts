@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ErrorTypes, Severity } from '@simple-monitor/types'
-import { log } from '../../packages/core/src/external'
-import { transportData } from '../../packages/core/src/transportData'
-import { breadcrumb } from '../../packages/core/src/breadcrumb'
+import { log } from '@simple-monitor/core'
+import { transportData } from '@simple-monitor/core'
+import { breadcrumb } from '@simple-monitor/core'
 
 describe('log (external)', () => {
   beforeEach(() => {

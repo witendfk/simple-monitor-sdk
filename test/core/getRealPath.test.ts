@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getRealPath } from '../../packages/core/src/errorId'
+import { getRealPath } from '@simple-monitor/core'
 
 describe('getRealPath', () => {
   it('去除 query 和 hash', () => {

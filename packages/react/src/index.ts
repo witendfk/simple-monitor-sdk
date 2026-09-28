@@ -13,18 +13,22 @@ import { Component, type ReactNode, type ErrorInfo } from 'react'
 import { ErrorTypes, BreadCrumbTypes, Severity } from '@simple-monitor/types'
 import type { ReportDataType } from '@simple-monitor/types'
 import { extractErrorStack } from '@simple-monitor/utils'
-import { transportData, breadcrumb } from '@simple-monitor/core'
+import { getDefaultMonitorClient } from '@simple-monitor/core'
+import type { MonitorClient } from '@simple-monitor/core'
 
 interface ComponentInfo {
   /** React 组件调用栈（componentDidCatch 第二参的 componentStack，@types/react 19 可能为 null） */
   componentStack?: string | null
 }
 
-/** 从 React componentStack 提取最近的组件名（best-effort，拿不到记 anonymous） */
+/**
+ * 从 React componentStack 提取最近的组件名（best-effort，拿不到记 anonymous）。
+ * React 16/17 格式：`\n    in MyComponent\n    in div...`
+ * React 18+ 格式：`\n    at MyComponent\n    at div...`（旧正则只匹配 in，18+ 恒 anonymous——已修复）
+ */
 function parseComponentStack(stack?: string | null): string {
   if (!stack) return 'anonymous'
-  // componentStack 形如 "\n    in MyComponent\n    in div..."
-  const m = stack.match(/in\s+(\S+)/)
+  const m = stack.match(/(?:in|at)\s+([^\s(]+)/)
   return m ? m[1] : 'anonymous'
 }
 
@@ -32,7 +36,11 @@ function parseComponentStack(stack?: string | null): string {
  * 手动上报 React 错误。用户在自己的 ErrorBoundary 的 componentDidCatch 里调用：
  *   componentDidCatch(err, info) { errorBoundaryReport(err, info) }
  */
-export function errorBoundaryReport(error: unknown, info: ComponentInfo = {}): void {
+export function errorBoundaryReport(
+  error: unknown,
+  info: ComponentInfo = {},
+  client: MonitorClient = getDefaultMonitorClient()
+): void {
   const parsed = extractErrorStack(error as Error, Severity.Normal) as ReportDataType | null
   if (!parsed) return
   parsed.type = ErrorTypes.REACT_ERROR
@@ -40,15 +48,15 @@ export function errorBoundaryReport(error: unknown, info: ComponentInfo = {}): v
     info.componentStack
   )
 
-  breadcrumb.push({
+  client.breadcrumb.push({
     type: BreadCrumbTypes.REACT,
-    category: breadcrumb.getCategory(BreadCrumbTypes.REACT),
+    category: client.breadcrumb.getCategory(BreadCrumbTypes.REACT),
     data: { message: parsed.message, componentStack: info.componentStack },
     level: Severity.Normal,
     time: parsed.time,
   })
 
-  transportData.send(parsed)
+  client.transport.send(parsed)
 }
 
 interface ErrorBoundaryProps {
@@ -58,6 +66,8 @@ interface ErrorBoundaryProps {
   children?: ReactNode
   /** 捕获到错误时的额外回调（错误已自动上报，此回调用于业务侧打日志/上报等） */
   onError?: (error: Error, info: ErrorInfo) => void
+  /** 目标监控实例（多实例场景），缺省默认 client */
+  client?: MonitorClient
 }
 
 interface ErrorBoundaryState {
@@ -78,7 +88,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     try {
-      errorBoundaryReport(error, { componentStack: info.componentStack })
+      errorBoundaryReport(error, { componentStack: info.componentStack }, this.props.client)
     } catch {
       /* 采集失败不影响错误边界本身的行为 */
     }

@@ -1,96 +1,49 @@
 import { InitOptions } from '@simple-monitor/types'
-import { generateUUID, toStringValidateOption, validateOption, logger } from '@simple-monitor/utils'
-import { _support, setSilentFlag } from './global'
-import { breadcrumb } from './breadcrumb'
-import { transportData } from './transportData'
+import { generateUUID, toStringValidateOption, validateOption } from '@simple-monitor/utils'
 
+/**
+ * 客户端配置中心（M1 类化，ADR-1）
+ *
+ * 旧实现是 _support 单例；现在随 MonitorClient 实例走，可多实例、可隔离测试。
+ * wx-mini 专属钩子已随死配置清理移除（总纲 §3.5），小程序采集包实装时再恢复。
+ */
 export class Options {
-  beforeAppAjaxSend: InitOptions['beforeAppAjaxSend'] = () => {}
-  enableTraceId: InitOptions['enableTraceId']
-  filterXhrUrlRegExp: InitOptions['filterXhrUrlRegExp']
-  includeHttpUrlTraceIdRegExp: InitOptions['includeHttpUrlTraceIdRegExp']
-  traceIdFieldName: InitOptions['traceIdFieldName'] = 'Trace-Id'
-  throttleDelayTime: InitOptions['throttleDelayTime'] = 0
-  maxDuplicateCount: InitOptions['maxDuplicateCount'] = 2
+  enableTraceId: boolean = false
+  filterXhrUrlRegExp?: RegExp
+  includeHttpUrlTraceIdRegExp?: RegExp
+  /** 注入请求头的追踪字段名；默认 W3C Trace Context 的 `traceparent`（ADR-7） */
+  traceIdFieldName: string = 'traceparent'
+  throttleDelayTime: number = 200
+  maxDuplicateCount: number = 2
   disabled: boolean = false
-  // wx-mini
-  appOnLaunch: InitOptions['appOnLaunch'] = () => {}
-  appOnShow: InitOptions['appOnShow'] = () => {}
-  onPageNotFound: InitOptions['onPageNotFound'] = () => {}
-  appOnHide: InitOptions['appOnHide'] = () => {}
-  pageOnUnload: InitOptions['pageOnUnload'] = () => {}
-  pageOnShow: InitOptions['pageOnShow'] = () => {}
-  pageOnHide: InitOptions['pageOnHide'] = () => {}
-  onShareAppMessage: InitOptions['onShareAppMessage'] = () => {}
-  onShareTimeline: InitOptions['onShareTimeline'] = () => {}
-  onTabItemTap: InitOptions['onTabItemTap'] = () => {}
-  // need return opitons，so defaul value is undefined
-  wxNavigateToMiniProgram: InitOptions['wxNavigateToMiniProgram']
-  triggerWxEvent: InitOptions['triggerWxEvent'] = () => {}
   onRouteChange?: InitOptions['onRouteChange']
 
-  constructor() {
-    this.enableTraceId = false
-    this.filterXhrUrlRegExp = undefined
-    this.includeHttpUrlTraceIdRegExp = undefined
-  }
   bindOptions(options: InitOptions = {}): void {
     const {
-      beforeAppAjaxSend,
       enableTraceId,
       filterXhrUrlRegExp,
       traceIdFieldName,
       throttleDelayTime,
       includeHttpUrlTraceIdRegExp,
-      appOnLaunch,
-      appOnShow,
-      appOnHide,
-      pageOnUnload,
-      pageOnShow,
-      pageOnHide,
-      onPageNotFound,
-      onShareAppMessage,
-      onShareTimeline,
-      onTabItemTap,
-      wxNavigateToMiniProgram,
-      triggerWxEvent,
       maxDuplicateCount,
       disabled,
       onRouteChange,
     } = options
-    validateOption(beforeAppAjaxSend, 'beforeAppAjaxSend', 'function') &&
-      (this.beforeAppAjaxSend = beforeAppAjaxSend)
-    // wx-mini hooks
-    validateOption(appOnLaunch, 'appOnLaunch', 'function') && (this.appOnLaunch = appOnLaunch)
-    validateOption(appOnShow, 'appOnShow', 'function') && (this.appOnShow = appOnShow)
-    validateOption(appOnHide, 'appOnHide', 'function') && (this.appOnHide = appOnHide)
-    validateOption(pageOnUnload, 'pageOnUnload', 'function') && (this.pageOnUnload = pageOnUnload)
-    validateOption(pageOnShow, 'pageOnShow', 'function') && (this.pageOnShow = pageOnShow)
-    validateOption(pageOnHide, 'pageOnHide', 'function') && (this.pageOnHide = pageOnHide)
-    validateOption(onPageNotFound, 'onPageNotFound', 'function') &&
-      (this.onPageNotFound = onPageNotFound)
-    validateOption(onShareAppMessage, 'onShareAppMessage', 'function') &&
-      (this.onShareAppMessage = onShareAppMessage)
-    validateOption(onShareTimeline, 'onShareTimeline', 'function') &&
-      (this.onShareTimeline = onShareTimeline)
-    validateOption(onTabItemTap, 'onTabItemTap', 'function') && (this.onTabItemTap = onTabItemTap)
-    validateOption(wxNavigateToMiniProgram, 'wxNavigateToMiniProgram', 'function') &&
-      (this.wxNavigateToMiniProgram = wxNavigateToMiniProgram)
-    validateOption(triggerWxEvent, 'triggerWxEvent', 'function') &&
-      (this.triggerWxEvent = triggerWxEvent)
-    // browser hooks
+    if (validateOption(enableTraceId, 'enableTraceId', 'boolean')) {
+      this.enableTraceId = !!enableTraceId
+    }
+    if (validateOption(traceIdFieldName, 'traceIdFieldName', 'string')) {
+      this.traceIdFieldName = String(traceIdFieldName)
+    }
+    if (validateOption(throttleDelayTime, 'throttleDelayTime', 'number')) {
+      this.throttleDelayTime = Number(throttleDelayTime)
+    }
+    if (validateOption(maxDuplicateCount, 'maxDuplicateCount', 'number')) {
+      this.maxDuplicateCount = Number(maxDuplicateCount)
+    }
+    validateOption(disabled, 'disabled', 'boolean') && (this.disabled = !!disabled)
     validateOption(onRouteChange, 'onRouteChange', 'function') &&
       (this.onRouteChange = onRouteChange)
-
-    validateOption(enableTraceId, 'enableTraceId', 'boolean') &&
-      (this.enableTraceId = enableTraceId)
-    validateOption(traceIdFieldName, 'traceIdFieldName', 'string') &&
-      (this.traceIdFieldName = traceIdFieldName)
-    validateOption(throttleDelayTime, 'throttleDelayTime', 'number') &&
-      (this.throttleDelayTime = throttleDelayTime)
-    validateOption(maxDuplicateCount, 'maxDuplicateCount', 'number') &&
-      (this.maxDuplicateCount = maxDuplicateCount)
-    validateOption(disabled, 'disabled', 'boolean') && (this.disabled = !!disabled)
     toStringValidateOption(filterXhrUrlRegExp, 'filterXhrUrlRegExp', '[object RegExp]') &&
       (this.filterXhrUrlRegExp = filterXhrUrlRegExp)
     toStringValidateOption(
@@ -99,31 +52,27 @@ export class Options {
       '[object RegExp]'
     ) && (this.includeHttpUrlTraceIdRegExp = includeHttpUrlTraceIdRegExp)
   }
-}
 
-const options = _support.options || (_support.options = new Options())
-
-export function setTraceId(
-  httpUrl: string,
-  callback: (headerFieldName: string, traceId: string) => void
-) {
-  const { includeHttpUrlTraceIdRegExp, enableTraceId } = options
-  if (enableTraceId && includeHttpUrlTraceIdRegExp && includeHttpUrlTraceIdRegExp.test(httpUrl)) {
-    const traceId = generateUUID()
-    callback(options.traceIdFieldName, traceId)
+  /**
+   * 判定请求是否需要注入追踪头，命中则回调（headerName, traceId）。
+   *
+   * ADR-7：默认产出 W3C traceparent 格式（00-<32hex>-<16hex>-01），
+   * 请求头与 HTTP 错误上报里的 traceId 对齐，服务端可据此关联前后端链路。
+   */
+  resolveTraceId(
+    httpUrl: string,
+    callback: (headerFieldName: string, traceId: string) => void
+  ): void {
+    if (!this.enableTraceId || !this.includeHttpUrlTraceIdRegExp) return
+    if (!this.includeHttpUrlTraceIdRegExp.test(httpUrl)) return
+    callback(this.traceIdFieldName, createTraceParent())
   }
 }
 
-/**
- * init core methods
- * @param paramOptions
- */
-export function initOptions(paramOptions: InitOptions = {}) {
-  setSilentFlag(paramOptions)
-  breadcrumb.bindOptions(paramOptions)
-  logger.bindOptions(paramOptions.debug)
-  transportData.bindOptions(paramOptions)
-  options.bindOptions(paramOptions)
-}
+/** client 内部引用别名（避免与 InitOptions 命名混淆） */
+export type ClientOptions = Options
 
-export { options }
+/** W3C Trace Context：version 00 + 32hex traceId + 16hex spanId + flags 01 */
+export function createTraceParent(): string {
+  return `00-${generateUUID().replace(/-/g, '')}-${generateUUID().replace(/-/g, '').slice(0, 16)}-01`
+}

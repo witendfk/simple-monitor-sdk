@@ -12,6 +12,8 @@ export default defineConfig({
       '@simple-monitor/web': pkgs('web'),
       '@simple-monitor/browser': pkgs('browser'),
       '@simple-monitor/web-performance': pkgs('web-performance'),
+      '@simple-monitor/vue': pkgs('vue'),
+      '@simple-monitor/react': pkgs('react'),
       '@simple-monitor/core': pkgs('core'),
       '@simple-monitor/shared': pkgs('shared'),
       '@simple-monitor/utils': pkgs('utils'),

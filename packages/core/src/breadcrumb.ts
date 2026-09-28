@@ -5,14 +5,19 @@ import {
   InitOptions,
   IBreadcrumb,
 } from '@simple-monitor/types'
-import { validateOption, getTimestamp } from '@simple-monitor/utils'
-import { silentConsoleScope, _support } from './global'
+import { validateOption, getTimestamp, silentConsoleScope } from '@simple-monitor/utils'
 
+/**
+ * 面包屑用户行为栈（M1 类化，ADR-1）
+ *
+ * 环形缓冲：超出 maxBreadcrumbs 丢最早记录。
+ * 旧实现的 push 后全量 sort 是历史包袱——记录本就按到达顺序追加（时间几乎单调），
+ * 现改为：仅当发现时间倒序时做一次插入修正，常态 O(1)。
+ */
 export class Breadcrumb implements IBreadcrumb {
   maxBreadcrumbs = 10
   beforePushBreadcrumb: unknown = null
   stack: BreadcrumbPushData[] = []
-  constructor() {}
 
   push(data: BreadcrumbPushData): void {
     if (typeof this.beforePushBreadcrumb === 'function') {
@@ -27,23 +32,32 @@ export class Breadcrumb implements IBreadcrumb {
     }
     this.immediatePush(data)
   }
+
   immediatePush(data: BreadcrumbPushData): void {
     data.time ??= getTimestamp()
     if (this.stack.length >= this.maxBreadcrumbs) {
-      this.shift()
+      this.stack.shift()
     }
     this.stack.push(data)
-    this.stack.sort((a, b) => (a.time || 0) - (b.time || 0))
+    // 只修正局部倒序（时钟回拨 / 异步乱序到达），常态无额外开销
+    const n = this.stack.length
+    if (n >= 2 && (this.stack[n - 2].time || 0) > (this.stack[n - 1].time || 0)) {
+      this.stack.sort((a, b) => (a.time || 0) - (b.time || 0))
+    }
   }
+
   shift(): boolean {
     return this.stack.shift() !== undefined
   }
+
   clear(): void {
     this.stack = []
   }
+
   getStack(): BreadcrumbPushData[] {
     return this.stack
   }
+
   getCategory(type: BreadCrumbTypes) {
     switch (type) {
       case BreadCrumbTypes.XHR:
@@ -57,15 +71,6 @@ export class Breadcrumb implements IBreadcrumb {
       case BreadCrumbTypes.CUSTOMER:
       case BreadCrumbTypes.CONSOLE:
         return BreadCrumbCategory.DEBUG
-      case BreadCrumbTypes.APP_ON_LAUNCH:
-      case BreadCrumbTypes.APP_ON_SHOW:
-      case BreadCrumbTypes.APP_ON_HIDE:
-      case BreadCrumbTypes.PAGE_ON_SHOW:
-      case BreadCrumbTypes.PAGE_ON_HIDE:
-      case BreadCrumbTypes.PAGE_ON_SHARE_APP_MESSAGE:
-      case BreadCrumbTypes.PAGE_ON_SHARE_TIMELINE:
-      case BreadCrumbTypes.PAGE_ON_TAB_ITEM_TAP:
-        return BreadCrumbCategory.LIFECYCLE
       case BreadCrumbTypes.UNHANDLEDREJECTION:
       case BreadCrumbTypes.CODE_ERROR:
       case BreadCrumbTypes.RESOURCE:
@@ -75,6 +80,7 @@ export class Breadcrumb implements IBreadcrumb {
         return BreadCrumbCategory.EXCEPTION
     }
   }
+
   bindOptions(options: InitOptions = {}): void {
     const { maxBreadcrumbs, beforePushBreadcrumb } = options
     if (validateOption(maxBreadcrumbs, 'maxBreadcrumbs', 'number')) {
@@ -85,5 +91,3 @@ export class Breadcrumb implements IBreadcrumb {
     }
   }
 }
-const breadcrumb = _support.breadcrumb || (_support.breadcrumb = new Breadcrumb())
-export { breadcrumb }

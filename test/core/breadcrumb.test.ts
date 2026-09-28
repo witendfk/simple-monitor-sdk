@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { breadcrumb } from '../../packages/core/src/breadcrumb'
+import { breadcrumb } from '@simple-monitor/core'
 import { BreadCrumbTypes } from '@simple-monitor/types'
 import type { BreadcrumbPushData } from '@simple-monitor/types'
 
