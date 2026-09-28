@@ -13,11 +13,15 @@ export const initFPS = (
   logFpsCount: number,
   immediately = true
 ): void => {
-  getFPS(logFpsCount).then((fps: number) => {
-    const metrics = { name: metricsName.FPS, value: fps }
-    store.set(metricsName.FPS, metrics)
-    if (immediately) {
-      report(metrics)
-    }
-  })
+  getFPS(logFpsCount)
+    .then((fps: number) => {
+      const metrics = { name: metricsName.FPS, value: fps }
+      store.set(metricsName.FPS, metrics)
+      if (immediately) {
+        report(metrics)
+      }
+    })
+    .catch(() => {
+      /* 采样异常静默：监控自身不允许产生 unhandled rejection */
+    })
 }

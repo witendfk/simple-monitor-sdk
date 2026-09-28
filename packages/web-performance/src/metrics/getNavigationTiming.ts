@@ -6,9 +6,15 @@ import observe from '../lib/observe'
 import { roundByFour, validNumber } from '../utils'
 
 const resolveNavigationTiming = (
-  entry: PerformanceNavigationTiming,
+  entry: PerformanceNavigationTiming | undefined | null,
   resolve: (v: IPerformanceNavigationTiming) => void
 ): void => {
+  // 非浏览器环境（node/jsdom）没有 navigation 条目且 performance.timing 为 undefined：
+  // 跳过而非崩溃——监控引擎不允许产生 unhandled rejection（CI 0/1 事故修复）
+  if (!entry) {
+    resolve(undefined as unknown as IPerformanceNavigationTiming)
+    return
+  }
   const {
     domainLookupStart,
     domainLookupEnd,
@@ -60,10 +66,11 @@ const getNavigationTiming = (): Promise<IPerformanceNavigationTiming> | undefine
       }
       poRef.current = observe('navigation', entryHandler)
     } else {
+      const entries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[]
       const navigation =
-        performance.getEntriesByType('navigation').length > 0
-          ? (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming)
-          : (performance.timing as unknown as PerformanceNavigationTiming)
+        entries.length > 0
+          ? entries[0]
+          : ((performance as any).timing as PerformanceNavigationTiming | undefined)
       resolveNavigationTiming(navigation, resolve)
     }
   })
@@ -74,13 +81,19 @@ export const initNavigationTiming = (
   report: IReportHandler,
   immediately = true
 ): void => {
-  getNavigationTiming()?.then((navigationTiming) => {
-    const metrics = { name: metricsName.NT, value: navigationTiming } as IMetrics
-    if (validNumber(Object?.values(metrics.value))) {
-      store.set(metricsName.NT, metrics)
-      if (immediately) {
-        report(metrics)
+  getNavigationTiming()
+    ?.then((navigationTiming) => {
+      // 环境不支持 navigation 时序：跳过采集，不产生假数据
+      if (!navigationTiming) return
+      const metrics = { name: metricsName.NT, value: navigationTiming } as IMetrics
+      if (validNumber(Object?.values(metrics.value))) {
+        store.set(metricsName.NT, metrics)
+        if (immediately) {
+          report(metrics)
+        }
       }
-    }
-  })
+    })
+    .catch(() => {
+      /* 环境不支持：静默降级，监控自身不允许产生 unhandled rejection */
+    })
 }
