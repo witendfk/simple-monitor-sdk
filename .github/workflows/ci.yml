@@ -24,6 +24,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint:ci
       - run: pnpm build
+      - run: pnpm --filter @simple-monitor/server typecheck
       - run: pnpm test
 
   # ADR-6：自研 web-vitals vs 官方库 oracle 一致性（真实 chromium 双跑）
