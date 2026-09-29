@@ -23,7 +23,7 @@
     "prepublishOnly": "pnpm build",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "pnpm build && changeset publish",
+    "release": "pnpm build && pnpm -r --filter \"./packages/*\" publish --access public --no-git-checks",
     "lint:ci": "eslint . --ext .ts --max-warnings 176",
     "test:conformance": "vitest run test/oracle/conformance.spec.ts",
     "demo:full": "pnpm --filter @simple-monitor/server dev & sleep 2 && pnpm demo",

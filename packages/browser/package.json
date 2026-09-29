@@ -1,6 +1,6 @@
 {
   "name": "@simple-monitor/browser",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Browser platform adapter for Simple Monitor SDK",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -32,5 +32,9 @@
     "browser"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/witendfk/simple-monitor-sdk.git"
+  }
 }

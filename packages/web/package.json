@@ -1,6 +1,6 @@
 {
   "name": "@simple-monitor/web",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Web integration bundle for Simple Monitor SDK",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -35,5 +35,9 @@
     "web"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/witendfk/simple-monitor-sdk.git"
+  }
 }

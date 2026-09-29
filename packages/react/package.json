@@ -1,6 +1,6 @@
 {
   "name": "@simple-monitor/react",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "React platform adapter for Simple Monitor SDK",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -43,5 +43,9 @@
   "devDependencies": {
     "@types/react": "^19.2.17",
     "react": "^19.2.7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/witendfk/simple-monitor-sdk.git"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@simple-monitor/utils",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Utility functions for Simple Monitor SDK",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -28,5 +28,9 @@
     "utils"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/witendfk/simple-monitor-sdk.git"
+  }
 }

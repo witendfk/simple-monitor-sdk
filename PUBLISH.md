@@ -48,10 +48,13 @@ npm i @simple-monitor/web                  # 干净项目安装
 # 15 分钟接入验证：按文档站快速开始跑通 init({dsn, apikey})
 ```
 
-## 五、当前状态
+## 五、当前状态（发布管线已验证到「只剩登录」）
 
-- [x] changesets 配置（.changeset/config.json）
-- [x] 根 `release` 脚本 + `prepublishOnly` 钩子
-- [x] 本文档
-- [ ] **真实 npm 发布（需要账号操作，归属仓库所有者）**
-- [ ] 文档站上线（docs/ vitepress，见 `pnpm docs:build`）
+- [x] changesets 配置：`access: public`（scoped 包必须）/ `baseBranch: master`
+- [x] 首版 changeset 已消费：全包 0.0.1 → **0.1.0** + CHANGELOG 已生成
+- [x] `pnpm pack` 实测：**workspace:\* 协议在打包时解析为真实版本**（0.1.0，无残留）——
+  发布脚本因此用 `pnpm -r publish`（npm publish 不解析 workspace 协议，勿改回）
+- [x] 九包 repository 字段齐（provenance 前提）；apps/* 已标 private 不发布
+- [x] 根 `release` 脚本 = `pnpm build && pnpm -r publish --access public`
+- [ ] **剩你只做两步：`npm login` → `pnpm release`**（npm 侧需先建 `simple-monitor` 组织）
+- [ ] 发布后：文档站部署（`pnpm docs:build` 产物在 `docs/.vitepress/dist`）+ 陌生人 15 分钟验收

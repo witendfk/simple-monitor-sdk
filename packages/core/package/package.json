@@ -15,17 +15,11 @@
   "files": [
     "dist"
   ],
-  "scripts": {
-    "build": "tsup && tsc -p tsconfig.json",
-    "dev": "tsup --watch",
-    "clean": "rm -rf dist",
-    "typecheck": "tsc --noEmit"
-  },
   "dependencies": {
-    "@simple-monitor/types": "workspace:*",
-    "@simple-monitor/shared": "workspace:*",
-    "@simple-monitor/utils": "workspace:*",
-    "@simple-monitor/protocol": "workspace:*"
+    "@simple-monitor/shared": "0.1.0",
+    "@simple-monitor/protocol": "0.1.0",
+    "@simple-monitor/utils": "0.1.0",
+    "@simple-monitor/types": "0.1.0"
   },
   "keywords": [
     "monitor",
@@ -36,5 +30,11 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/witendfk/simple-monitor-sdk.git"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.json",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
   }
 }
