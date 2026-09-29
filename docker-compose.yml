@@ -1,0 +1,37 @@
+version: "3.8"
+
+# simple-monitor 服务端基础设施（总纲 §6.4）
+# 用法：docker compose up -d → SDK dsn 指向 http://localhost:3000/report/batch
+# 服务端运行：PROJECTS_JSON='[{"apikey":"demo-key","name":"demo"}]' REDIS_URL=... CLICKHOUSE_URL=... pnpm --filter @simple-monitor/server start
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"   # HTTP（@clickhouse/client 默认）
+      - "9000:9000"   # native
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ./docker/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  clickhouse-data:

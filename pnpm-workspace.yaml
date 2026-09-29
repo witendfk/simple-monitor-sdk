@@ -1,5 +1,6 @@
 packages:
   - 'packages/*'
+  - 'apps/*'
 # pnpm 10 构建脚本审批：esbuild 的 postinstall 需要显式允许
 onlyBuiltDependencies:
   - esbuild
