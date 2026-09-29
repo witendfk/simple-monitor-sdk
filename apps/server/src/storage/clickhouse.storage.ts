@@ -134,7 +134,9 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
                 count() AS count,
                 uniqExact(sessionId) AS sessions,
                 min(ts) AS firstSeen,
-                max(ts) AS lastSeen
+                max(ts) AS lastSeen,
+                groupUniqArray(release) AS releases,
+                argMinIf(release, ts, release != '') AS firstSeenRelease
               FROM events
               WHERE kind = 'error' AND fingerprint != '' AND ts >= {since:DateTime}
               GROUP BY fingerprint, type
@@ -151,6 +153,8 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
       sessions: string
       firstSeen: string
       lastSeen: string
+      releases: string[]
+      firstSeenRelease: string
     }>()
     return rows.map((r) => ({
       fingerprint: r.fingerprint,
@@ -160,6 +164,8 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
       affectedSessions: Number(r.sessions),
       firstSeen: new Date(r.firstSeen.replace(' ', 'T') + 'Z').toISOString(),
       lastSeen: new Date(r.lastSeen.replace(' ', 'T') + 'Z').toISOString(),
+      releases: r.releases ?? [],
+      firstSeenRelease: r.firstSeenRelease || undefined,
       // 样本惰性加载：组详情单独走 errorDetail，列表不拖全量堆栈
       sample: {
         kind: 'error',

@@ -15,6 +15,10 @@ export interface ErrorGroup {
   affectedSessions: number
   firstSeen: string
   lastSeen: string
+  /** 见过的发版集合（发版对比视图） */
+  releases: string[]
+  /** 最早出现的发版（= 查询 release 时即「新错误回归」标记） */
+  firstSeenRelease?: string
   /** 保留一条完整样本（含堆栈/面包屑）供详情页 */
   sample: NormalizedEvent
 }

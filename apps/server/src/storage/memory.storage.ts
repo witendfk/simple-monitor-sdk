@@ -63,9 +63,14 @@ export class MemoryStorage implements IEventStorage {
           affectedSessions: 1,
           firstSeen: e.ts.toISOString(),
           lastSeen: e.ts.toISOString(),
+          releases: e.release ? [e.release] : [],
+          firstSeenRelease: e.release,
           sample: e,
         })
       } else {
+        if (e.release && !existing.releases.includes(e.release)) {
+          existing.releases.push(e.release)
+        }
         existing.count += 1
         existing.affectedSessions =
           existing.sample.sessionId === e.sessionId

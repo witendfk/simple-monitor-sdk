@@ -20,6 +20,7 @@ import {
 } from './report/rate-limiter'
 import { ReportController, PROJECTS_TOKEN } from './report/report.controller'
 import { IngestService } from './ingest/ingest.service'
+import { SourcemapService } from './ingest/sourcemap.service'
 import { QueryController } from './query/query.controller'
 
 export const CONFIG_TOKEN = 'CONFIG'
@@ -52,6 +53,7 @@ export const CONFIG_TOKEN = 'CONFIG'
         config.redisUrl ? new RedisRateLimiter(config.redisUrl) : new MemoryRateLimiter(),
     },
     IngestService,
+    SourcemapService,
   ],
 })
 export class AppModule {}
