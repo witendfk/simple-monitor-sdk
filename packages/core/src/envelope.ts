@@ -5,6 +5,7 @@
  * 职责边界：只做转换与归一化，不做网络——发送/重试/缓存见 batchSender.ts。
  */
 import type { BreadcrumbPushData, DeviceInfo, ReportDataType } from '@simple-monitor/types'
+import { mask, sanitizePageUrl } from '@simple-monitor/utils'
 import {
   PROTOCOL_VERSION,
   type Breadcrumb,
@@ -77,13 +78,19 @@ export function toErrorEvent(data: ReportDataType, breadcrumbs?: BreadcrumbPushD
       name: data.name ? String(data.name) : undefined,
       level: data.level ? String(data.level) : undefined,
       time: typeof data.time === 'number' ? data.time : undefined,
-      page: data.url ? String(data.url) : undefined,
+      page: data.url ? sanitizePageUrl(String(data.url)) : undefined,
       stackFrames: toStackFrames(data.stack),
       errorId: typeof data.errorId === 'number' ? data.errorId : undefined,
       componentName: data.componentName ? String(data.componentName) : undefined,
       customTag: data.customTag ? String(data.customTag) : undefined,
       viewId: data.viewId ? String(data.viewId) : undefined,
-      http,
+      http: http
+        ? {
+            ...http,
+            // API URL 保留 query 的调试价值（哪个 id 失败），凭证经 mask 遮蔽
+            url: http.url ? mask(http.url) : undefined,
+          }
+        : undefined,
     },
     breadcrumbs: toBreadcrumbs(breadcrumbs),
   }

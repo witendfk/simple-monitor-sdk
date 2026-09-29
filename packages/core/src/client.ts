@@ -112,6 +112,7 @@ export class MonitorClient {
     this.registry.clear()
     this.breadcrumb.clear()
     this.flags.clear()
-    this.transport.queue.clear()
+    // 丢弃批量缓冲并清掉 flush 定时器：销毁后不再有任何发送行为
+    this.transport.destroy()
   }
 }

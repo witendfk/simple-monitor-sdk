@@ -21,6 +21,7 @@ import { isReportDataType, isPerformanceData } from '@simple-monitor/types'
 import type { TransportEnvelope } from '@simple-monitor/protocol'
 import {
   Queue,
+  sanitizePageUrl,
   isWxMiniEnv,
   isBrowserEnv,
   logger,
@@ -136,7 +137,7 @@ export class TransportData implements ITransportData {
         sdkVersion: SDK_VERSION,
         sessionId: this.session.getSessionId(),
         trackerId: String(this.getTrackerId()),
-        page: _global?.location?.href ?? '',
+        page: sanitizePageUrl(_global?.location?.href ?? ''),
         viewId: this.getViewId() || undefined,
         deviceInfo: this.deviceInfo,
       },
@@ -502,6 +503,12 @@ export class TransportData implements ITransportData {
   /** 立即 flush 全部缓冲（测试/销毁前用） */
   async flush(): Promise<void> {
     await this.sender.flushAll()
+  }
+
+  /** 销毁上报通道：丢弃缓冲、清掉定时器——销毁后不再有任何发送行为 */
+  destroy(): void {
+    this.sender.reset()
+    this.queue.clear()
   }
 
   /** 当前缓冲条数（测试观测用） */

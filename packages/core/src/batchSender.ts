@@ -32,6 +32,8 @@ const BACKOFF_JITTER_MS = 250
 const RETRY_AFTER_CAP_MS = 10_000
 /** gzip 最小阈值：小载荷压缩得不偿失 */
 const GZIP_MIN_BYTES = 1024
+/** keepalive 载荷安全上限（浏览器硬限 64KB，留余量） */
+const KEEPALIVE_MAX_BYTES = 60_000
 
 export type ChannelState = 'active' | 'leaving'
 
@@ -88,6 +90,7 @@ export class BatchSender {
       this.groups.set(dsn, group)
     }
     group.push({ dsn, data })
+    // 第二个条件当前不可达（10 < 100），防御性保留：MAX_BATCH_EVENTS 调大时兜底防内存膨胀
     if (group.length >= MAX_BATCH_EVENTS || group.length >= MAX_BUFFERED_PER_DSN) {
       void this.flush(dsn)
       return
@@ -149,6 +152,11 @@ export class BatchSender {
     this.groups.delete(dsn)
     this.clearTimer()
     try {
+      // 其他组仍在缓冲时必须重挂定时器：定时器是全局共享的，
+      // 否则 A 组 flush 会吃掉 B 组唯一的触发源（滞留到下一个事件进来）
+      if (this.groups.size > 0) {
+        this.scheduleTimer()
+      }
       await this.sendWithRetry(dsn, group)
     } catch (error) {
       // 定时器触发的 flush 是 fire-and-forget（void），任何异常必须就地消化——
@@ -163,7 +171,15 @@ export class BatchSender {
   /** 离场同步通道：beacon 逐信封发送（不缓冲不重试，浏览器保证尽力送达） */
   private flushLeaving(payloads: Array<{ dsn: string; data: any }>): void {
     if (payloads.length === 0) return
-    const built = this.deps.buildEnvelope(payloads)
+    // 本方法在 pagehide/visibilitychange 监听器内同步执行：任何异常都会以
+    // uncaught error 形式打进宿主页面——buildEnvelope / 钩子 / 序列化全部就地防护
+    let built: { dsn: string; envelope: TransportEnvelope } | null
+    try {
+      built = this.deps.buildEnvelope(payloads)
+    } catch (error) {
+      logger.error('buildEnvelope error (leaving):', error)
+      return
+    }
     if (!built) return
     let url: string | false | void = built.dsn
     if (typeof this.deps.beforeSend === 'function') {
@@ -175,7 +191,28 @@ export class BatchSender {
       }
     }
     if (!url) return
-    const json = JSON.stringify(built.envelope)
+    let json: string
+    try {
+      json = JSON.stringify(built.envelope)
+    } catch (error) {
+      // 循环引用等序列化失败：降级为「SDK 自有安全字段」重建的最小信封
+      // （auth/session 无用户数据必可序列化；浅展开不行——嵌套循环引用会原样保留）
+      logger.error('envelope serialize error (leaving), fallback to minimal envelope:', error)
+      try {
+        const env = built.envelope
+        const minimal = {
+          protocolVersion: env.protocolVersion,
+          sentAt: env.sentAt,
+          auth: env.auth,
+          session: env.session,
+          context: { page: env.context?.page ?? '' },
+          events: [],
+        }
+        json = JSON.stringify(minimal)
+      } catch {
+        return
+      }
+    }
     try {
       const beacon = (globalThis as any)?.navigator?.sendBeacon
       if (typeof beacon === 'function' && beacon.call(globalThis.navigator, url, json)) {
@@ -236,6 +273,10 @@ export class BatchSender {
     }
     const { body, gzip } = await maybeGzip(json)
     const contentType = gzip ? 'application/gzip' : 'application/json'
+    // fetch keepalive 有 64KB body 硬限，超出直接 reject 且会被误判为网络错误
+    // → 重试 → 落库 → replay 再 reject 的死循环；大信封主动放弃 keepalive（主动期无需必达）
+    const bodySize = typeof body === 'string' ? body.length : body.byteLength
+    const keepalive = bodySize <= KEEPALIVE_MAX_BYTES
 
     let attempt = 0
     let backoff = BACKOFF_BASE_MS
@@ -246,7 +287,7 @@ export class BatchSender {
           method: 'POST',
           headers: { 'Content-Type': contentType },
           body: body as BodyInit,
-          keepalive: true,
+          keepalive,
         })
         if (res.ok) {
           this.deps.onSendResult?.(true, dsn, payloads.length)
@@ -292,7 +333,7 @@ export class BatchSender {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: item.json,
-            keepalive: true,
+            keepalive: item.json.length <= KEEPALIVE_MAX_BYTES,
           })
         } catch {
           // 仍不可达：放弃本轮，不回写（避免僵尸数据滚雪球）

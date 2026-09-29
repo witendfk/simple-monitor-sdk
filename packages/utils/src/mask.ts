@@ -48,3 +48,19 @@ export function mask(text: string): string {
   if (!enabled || !text || typeof text !== 'string') return text
   return text.replace(CREDENTIAL_PATTERN, '[credential]').replace(DIGIT_RUN_PATTERN, maskDigitRun)
 }
+
+/**
+ * 页面 URL 脱敏（第四隐私入口）：只保留 origin + pathname，剥离 query 与 hash。
+ * query 是 token/用户标识的常见藏身处（`?token=...&uid=...`）；hash 路由的页面
+ * 身份由 viewId 字段承载（采集时刻归一化），此处不再重复。
+ * 非法/相对 URL 降级为 mask 遮蔽（至少保证凭证不外泄）。
+ */
+export function sanitizePageUrl(url: string): string {
+  if (!url || typeof url !== 'string') return url
+  try {
+    const u = new URL(url)
+    return u.origin + u.pathname
+  } catch {
+    return mask(url)
+  }
+}
