@@ -4,6 +4,7 @@
  * 让测试环境零特殊处理——可测试性优先）。
  */
 import { Module } from '@nestjs/common'
+import { FetchWebhookSender } from './alert/alert-engine'
 import { loadConfig, type ServerConfig } from './config'
 import { ProjectsService } from './projects/projects.service'
 import { QUEUE_TOKEN, type IEventQueue } from './queue/event-queue'
@@ -21,12 +22,15 @@ import {
 import { ReportController, PROJECTS_TOKEN } from './report/report.controller'
 import { IngestService } from './ingest/ingest.service'
 import { SourcemapService } from './ingest/sourcemap.service'
+import { AlertRuleStore } from './alert/rule-store'
+import { AlertEngine } from './alert/alert-engine'
+import { AlertRulesController, AlertFiresController } from './alert/alert.controller'
 import { QueryController } from './query/query.controller'
 
 export const CONFIG_TOKEN = 'CONFIG'
 
 @Module({
-  controllers: [ReportController, QueryController],
+  controllers: [ReportController, QueryController, AlertRulesController, AlertFiresController],
   providers: [
     { provide: CONFIG_TOKEN, useValue: loadConfig() },
     {
@@ -54,6 +58,19 @@ export const CONFIG_TOKEN = 'CONFIG'
     },
     IngestService,
     SourcemapService,
+    AlertRuleStore,
+    {
+      provide: AlertEngine,
+      inject: [STORAGE_TOKEN, AlertRuleStore],
+      useFactory: (storage: IEventStorage, store: AlertRuleStore) =>
+        new AlertEngine(
+          storage,
+          store,
+          new FetchWebhookSender(),
+          // 评估周期：测试/演示可用 ALERT_CHECK_INTERVAL_MS 调小
+          Number(process.env.ALERT_CHECK_INTERVAL_MS) || 5 * 60_000
+        ),
+    },
   ],
 })
 export class AppModule {}

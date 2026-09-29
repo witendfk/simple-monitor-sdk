@@ -6,8 +6,9 @@ import { OverviewView } from './views/OverviewView'
 import { ErrorsView } from './views/ErrorsView'
 import { ErrorDetailView } from './views/ErrorDetailView'
 import { PerformanceView } from './views/PerformanceView'
+import { AlertsView } from './views/AlertsView'
 
-type Tab = 'overview' | 'errors' | 'performance'
+type Tab = 'overview' | 'errors' | 'performance' | 'alerts'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('overview')
@@ -36,6 +37,7 @@ export default function App() {
               ['overview', '概览'],
               ['errors', '错误'],
               ['performance', '性能'],
+              ['alerts', '告警'],
             ] as Array<[Tab, string]>
           ).map(([key, label]) => (
             <button
@@ -62,6 +64,7 @@ export default function App() {
             <ErrorsView onOpen={openDetail} />
           ))}
         {tab === 'performance' && <PerformanceView refreshKey={refreshKey} />}
+        {tab === 'alerts' && <AlertsView refreshKey={refreshKey} />}
       </main>
     </div>
   )

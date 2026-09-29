@@ -46,6 +46,7 @@ git status --short             # 新增未跟踪文件（逐个通读）
 
 - **异步纪律**：所有 fire-and-forget 异步链（`void fn()` / 事件回调 / timer 回调）必须有就地 try-catch——SDK 自身不允许产生 unhandled rejection（CI 曾两次因此判红）
 - **验证纪律**：构建/测试验证必须检查**退出码**，禁止用管道 grep 输出行数代替（曾掩盖 per-package tsc 失败）
+- **Nest DI 显式 token**：vitest 的 esbuild 不产出 emitDecoratorMetadata，class 型构造参数**必须** `@Inject(...)` 显式 token——design-type 注入在测试里静默 undefined（本项目连续踩三次：ProjectsService/SourcemapService/AlertRuleStore）
 - **声明与实现一致**：配置项 = 承诺。新增配置必须有消费点；文档/注释声明的能力必须可验证（历史红线：录屏空壳、TraceId 死代码）
 - **监控不伤宿主**：采集/上报路径的用户钩子、脏数据路径必须有防御（responseType 裸读、循环引用序列化都是已修复案例）
 - **隐私**：用户数据入面包屑/信封前必须过 mask + 截断

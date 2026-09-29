@@ -23,5 +23,10 @@ export default defineConfig({
   server: {
     port: 5180,
     host: true,
+    proxy: {
+      // 完整链路演示：SDK dsn 用相对路径 /report/batch，代理到服务端
+      // （DEMO_TARGET 可指向任意实例；mock 服务端见 examples/server）
+      '/report': process.env.DEMO_TARGET || 'http://localhost:3000',
+    },
   },
 })

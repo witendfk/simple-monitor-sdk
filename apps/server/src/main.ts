@@ -10,6 +10,7 @@ import express from 'express'
 import { AppModule } from './app.module'
 import { loadConfig } from './config'
 import { IngestService } from './ingest/ingest.service'
+import { AlertEngine } from './alert/alert-engine'
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig()
@@ -23,8 +24,9 @@ async function bootstrap(): Promise<void> {
   const port = config.port
   await app.listen(port)
 
-  // 启动消费循环（模块销毁时队列经 OnApplicationShutdown 优雅停止）
+  // 启动消费循环 + 告警评估（模块销毁时经 OnApplicationShutdown 优雅停止）
   app.get(IngestService).start()
+  app.get(AlertEngine).start()
 
   const mode = (url?: string): string => (url ? 'infra' : 'memory')
   Logger.log(

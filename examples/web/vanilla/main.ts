@@ -5,9 +5,10 @@
  */
 import { init, log } from '@simple-monitor/web'
 
-// 指向 examples/server mock 服务端
+// dsn 用相对路径：dev 下经 vite 代理到 DEMO_TARGET（默认 http://localhost:3000）
+// —— mock 验证与完整链路（apps/server）之间切换无需改代码
 init({
-  dsn: 'http://localhost:3000/report',
+  dsn: '/report/batch',
   apikey: 'demo-apikey',
   debug: true,
 })

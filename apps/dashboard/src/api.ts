@@ -80,6 +80,45 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T
 }
 
+export interface AlertRule {
+  id: string
+  apikey: string
+  type: 'error_spike' | 'perf_threshold'
+  name: string
+  webhookUrl: string
+  cooldownMinutes: number
+  enabled: boolean
+  config: Record<string, unknown>
+}
+
+export interface AlertFire {
+  id: string
+  ruleId: string
+  ruleName: string
+  apikey: string
+  firedAt: string
+  message: string
+  context: Record<string, unknown>
+}
+
+export const alertApi = {
+  list: () => getJson<AlertRule[]>('/alert-rules'),
+  create: (rule: Omit<AlertRule, 'id'>) =>
+    fetch(`${BASE}/alert-rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule),
+    }).then(async (res) => {
+      if (!res.ok) throw new Error(`create failed: ${res.status}`)
+      return (await res.json()) as AlertRule
+    }),
+  remove: (id: string) =>
+    fetch(`${BASE}/alert-rules/${id}`, { method: 'DELETE' }).then((res) => {
+      if (!res.ok) throw new Error(`delete failed: ${res.status}`)
+    }),
+  fires: (limit = 50) => getJson<AlertFire[]>(`/alert-fires?limit=${limit}`),
+}
+
 export const api = {
   overview: (sinceMinutes: number) => getJson<Overview>(`/overview?sinceMinutes=${sinceMinutes}`),
   errors: (limit = 50, release?: string) =>
