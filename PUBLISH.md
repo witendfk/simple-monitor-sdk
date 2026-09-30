@@ -76,6 +76,6 @@ import { ErrorBoundary } from '@simple-monitor/web/react' // React 项目
   发布脚本因此用 `pnpm -r publish`（npm publish 不解析 workspace 协议，勿改回）
 - [x] 九包 repository 字段齐（provenance 前提；provenance 本身未启用）；apps/* 已标 private 不发布
 - [x] 根 `release` 脚本 = `pnpm build && pnpm -r --filter "./packages/*" publish --access public --no-git-checks`
-- [ ] 对外发布前处理错误消息脱敏与离线重放丢数风险，并按 [开发总纲 §3.8](./开发总纲.md) 的验收条件复测。服务端另需分离公开上报 key 与管理权限、封闭 Webhook SSRF 路径，才能用于公网多项目部署
+- [ ] 对外发布前分离公开上报 key 与管理权限（[开发总纲 §3.8](./开发总纲.md) P0，唯一剩余发布级风险）。错误消息脱敏、离线重放丢数（2xx 确认后删除）与 Webhook SSRF 双道防护已于 2026-09-30 修复批次关闭
 - [ ] npm 侧创建 `simple-monitor` 组织并登录后执行 `pnpm release`；目前尚未实际发布
 - [ ] 发布后：文档站部署（`pnpm docs:build` 产物在 `docs/.vitepress/dist`）+ 陌生人 15 分钟验收

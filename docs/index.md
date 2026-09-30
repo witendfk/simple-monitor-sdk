@@ -14,7 +14,7 @@ features:
   - title: 采集 SDK
     details: 六类错误 + 自研 Web Vitals（oracle 一致性测试）+ 面包屑 + 基础隐私脱敏；已知边界见服务端指南与开发总纲
   - title: 可靠传输
-    details: 批量信封 / gzip / 指数退避 / IndexedDB 缓存 / sendBeacon 通道状态机 / 采样；重放失败可能丢数据
+    details: 批量信封 / gzip / 指数退避 / IndexedDB 缓存（2xx 确认后删除，失败保留重放）/ sendBeacon 通道状态机 / 采样
   - title: 服务端平台
     details: 协议校验 / Redis Stream 削峰 / ClickHouse 存储 + 物化视图 / SourceMap 符号化 / 告警
 ---

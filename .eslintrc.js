@@ -22,5 +22,5 @@ module.exports = {
     'react-hooks/rules-of-hooks': 'error',
     'react-hooks/exhaustive-deps': 'warn',
   },
-  ignorePatterns: ['dist', 'node_modules', '*.js'],
+  ignorePatterns: ['dist', 'node_modules', '*.js', 'packages/protocol/src/*.d.ts', 'packages/protocol/src/*.js', 'packages/protocol/src/*.js.map', 'packages/protocol/src/*.d.ts.map'],
 };

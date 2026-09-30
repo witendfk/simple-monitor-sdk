@@ -79,3 +79,13 @@ coverage/
 
 # 本地打包产物（pnpm pack:all 输出）
 /release/
+examples/verify/package-lock.json
+
+# tsup dts 产物误落在 src（protocol）
+packages/protocol/src/*.d.ts
+
+# tsc 就地 emit 的产物（协议包；正常构建在 dist/，见 §3.8 后记）
+packages/protocol/src/*.js
+packages/protocol/src/*.js.map
+packages/protocol/src/*.d.ts
+packages/protocol/src/*.d.ts.map

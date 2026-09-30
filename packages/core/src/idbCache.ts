@@ -3,6 +3,8 @@
  *
  * 发送最终失败（重试耗尽/断网）的信封落库，下次 init 时重放。
  * 上限 50 条（丢最老）、过期 3 天——离线缓存是尽力而为的补偿，不是持久队列。
+ * 重放确认 2xx 才删除：堆积上限由 MAX_ENTRIES 兜底（服务端长期不可达时丢最老），
+ * 不会因「失败保留」无限增长；重复发送由服务端 errorId 去重消化（待落地，§3.7）。
  * indexedDB 不可用（SSR/测试 node/隐私模式）整体 no-op，调用方无感。
  */
 
@@ -107,12 +109,29 @@ export class EnvelopeCache {
     })
   }
 
-  /** 取出全部有效缓存并清空（重放语义：取走即删，失败不重复堆积） */
-  async popAll(): Promise<CachedEnvelope[]> {
-    const all = (await this.tx<CachedEnvelope[]>('readonly', (s) => s.getAll())) ?? []
-    await this.clear()
+  /**
+   * 取出全部缓存（不清空）：过期项顺带删除，有效项原样保留——
+   * 删除时机交由调用方在确认发送成功（2xx）后按 id 逐条执行。
+   * 旧「取走即删」语义会在重放失败时丢信封（§3.8 P1），已废弃。
+   */
+  async drain(): Promise<Array<CachedEnvelope & { id: number }>> {
+    const all =
+      (await this.tx<Array<CachedEnvelope & { id: number }>>('readonly', (s) => s.getAll())) ?? []
     const now = Date.now()
-    return all.filter((e) => now - e.sentAt < EXPIRE_MS)
+    const kept: Array<CachedEnvelope & { id: number }> = []
+    for (const e of all) {
+      if (now - e.sentAt >= EXPIRE_MS) {
+        await this.deleteById(e.id)
+      } else {
+        kept.push(e)
+      }
+    }
+    return kept
+  }
+
+  /** 删除指定条目（重放确认 2xx 后调用；失败保留待下轮） */
+  async deleteById(id: number): Promise<void> {
+    await this.tx('readwrite', (s) => s.delete(id))
   }
 
   async clear(): Promise<void> {

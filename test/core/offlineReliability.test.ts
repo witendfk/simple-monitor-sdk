@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- 测试替身与脏数据构造场景豁免（对齐 batchSenderHardening 先例） */
 /**
  * 离线可靠性回路测试（M2）：重试耗尽 → 落库；恢复 → replay 重放
  * （cache 用注入替身，node 环境无 IndexedDB——真实 IDB 由 e2e 兜底）
@@ -18,16 +19,18 @@ const envelopeFixture = (n: number): TransportEnvelope => ({
   })),
 })
 
-/** 内存版缓存替身（模拟 IndexedDB 语义：save/popAll） */
+/** 内存版缓存替身（模拟 IndexedDB 语义：save/drain/deleteById；id 自增） */
 class FakeCache extends EnvelopeCache {
-  public items: CachedEnvelope[] = []
+  public items: Array<CachedEnvelope & { id: number }> = []
+  private seq = 0
   async save(dsn: string, json: string): Promise<void> {
-    this.items.push({ dsn, json, sentAt: Date.now() })
+    this.items.push({ dsn, json, sentAt: Date.now(), id: ++this.seq })
   }
-  async popAll(): Promise<CachedEnvelope[]> {
-    const all = this.items
-    this.items = []
-    return all
+  async drain(): Promise<Array<CachedEnvelope & { id: number }>> {
+    return this.items
+  }
+  async deleteById(id: number): Promise<void> {
+    this.items = this.items.filter((e) => e.id !== id)
   }
 }
 
@@ -75,7 +78,28 @@ describe('离线可靠性回路（重试耗尽 → 落库 → replay）', () => 
     const replayInit = fetchMock.mock.calls[3][1]
     expect(replayInit.headers['Content-Type']).toBe('application/json')
     expect(JSON.parse(replayInit.body).events).toHaveLength(1)
-    expect(cache.items).toHaveLength(0) // 取走即删
+    expect(cache.items).toHaveLength(0) // 2xx 确认后删除
+  })
+
+  it('replay 非 2xx / 网络失败：信封保留待下轮（§3.8 P1——旧实现取走即删会丢信封）', async () => {
+    // replay 阶段服务端 503
+    fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 503 }))
+    ;(globalThis as any).fetch = fetchMock
+    const cache = new FakeCache()
+    const sender = new BatchSender({
+      buildEnvelope: (payloads) => ({ dsn: payloads[0].dsn, envelope: envelopeFixture(1) }),
+      cache,
+    })
+    await cache.save('http://x/report', '{"staged":true}')
+    await sender.replay()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(cache.items).toHaveLength(1) // 非 2xx：保留
+
+    // 下轮网络恢复：2xx 后删除
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }))
+    await sender.replay()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(cache.items).toHaveLength(0)
   })
 
   it('4xx 拒绝（除 429/503）不落库——协议/权限问题重试无意义', async () => {
@@ -113,10 +137,11 @@ describe('离线可靠性回路（重试耗尽 → 落库 → replay）', () => 
 
 // EnvelopeCache 在 node 环境的基础行为（no-op 降级，不可抛错）
 describe('EnvelopeCache node 降级', () => {
-  it('无 indexedDB 时 save/popAll 安全 no-op', async () => {
+  it('无 indexedDB 时 save/drain/deleteById 安全 no-op', async () => {
     const cache = new EnvelopeCache()
     await expect(cache.save('http://x', '{}')).resolves.toBeUndefined()
-    await expect(cache.popAll()).resolves.toEqual([])
+    await expect(cache.drain()).resolves.toEqual([])
+    await expect(cache.deleteById(1)).resolves.toBeUndefined()
     await expect(cache.count()).resolves.toBe(0)
   })
 })

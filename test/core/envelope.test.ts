@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- 测试替身与脏数据构造场景豁免（对齐 batchSenderHardening 先例） */
 /**
  * 协议信封构建测试（M2）：归一化红线（value=number）+ 错误事件映射 + 信封组装
  */
@@ -132,6 +133,24 @@ describe('toPerfEvent / toErrorEvent', () => {
     } as any)
     expect(event.error.message.length).toBeLessThan(1100)
     expect(event.error.message).toContain(`截取前${1024}个字符`)
+  })
+  it('信封出口脱敏（§3.8 P1）：message/帧 URL/http 文本中的凭证不外泄', () => {
+    const event = toErrorEvent({
+      type: ErrorTypes.JAVASCRIPT_ERROR,
+      message: 'login failed: token=abc123',
+      name: 'Bearer eyabcdefgh12',
+      stack: [{ url: 'http://x.com/app.js?token=secret9', func: 'doThing', line: 1, column: 2 }],
+      request: { method: 'POST', url: 'http://api.x.com/login', data: 'password=hunter2' },
+      response: { status: 401, data: 'pwd=plain456' },
+    } as any)
+    expect(event.error.message).toContain('[credential]')
+    expect(event.error.message).not.toContain('abc123')
+    expect(event.error.name).toContain('[credential]')
+    expect(event.error.stackFrames?.[0].url).toContain('[credential]')
+    expect(event.error.stackFrames?.[0].url).not.toContain('secret9')
+    expect(event.error.http?.reqData).toContain('[credential]')
+    expect(event.error.http?.reqData).not.toContain('hunter2')
+    expect(event.error.http?.responseText).not.toContain('plain456')
   })
 })
 

@@ -39,7 +39,8 @@ export interface EnvelopeContext {
 function toStackFrames(stack: unknown): StackFrame[] | undefined {
   if (!Array.isArray(stack) || stack.length === 0) return undefined
   return stack.slice(0, 50).map((f: any) => ({
-    url: typeof f?.url === 'string' ? f.url : null,
+    // 帧 URL 是宿主可控文本（query 可能带凭证），出口统一遮蔽凭证
+    url: typeof f?.url === 'string' ? mask(f.url) : null,
     func: typeof f?.func === 'string' ? f.func : null,
     line: typeof f?.line === 'number' ? f.line : null,
     column: typeof f?.column === 'number' ? f.column : null,
@@ -86,16 +87,24 @@ export function toErrorEvent(data: ReportDataType, breadcrumbs?: BreadcrumbPushD
           status: data.response?.status,
           elapsedTime: data.elapsedTime,
           traceId: data.request?.traceId,
-          reqData: typeof data.request?.data === 'string' ? data.request.data : undefined,
-          responseText: typeof data.response?.data === 'string' ? data.response.data : undefined,
+          // 出口兜底脱敏：replace 层已 mask 过，手动上报等旁路进入的数据在此统一防线
+          reqData:
+            typeof data.request?.data === 'string'
+              ? interceptStr(mask(data.request.data), LIMITS.httpBody)
+              : undefined,
+          responseText:
+            typeof data.response?.data === 'string'
+              ? interceptStr(mask(data.response.data), LIMITS.httpBody)
+              : undefined,
         }
       : undefined
   return {
     kind: 'error',
     error: {
       type: String(data.type ?? 'UNKNOWN'),
-      message: interceptStr(String(data.message ?? ''), LIMITS.message),
-      name: data.name ? String(data.name) : undefined,
+      // message 是宿主 throw 的自由文本（可能含凭证）：先脱敏后截断——截断边界最多切坏标记本身，不泄原文
+      message: interceptStr(mask(String(data.message ?? '')), LIMITS.message),
+      name: data.name ? mask(String(data.name)) : undefined,
       level: data.level ? String(data.level) : undefined,
       time: typeof data.time === 'number' ? data.time : undefined,
       page: data.url ? sanitizePageUrl(String(data.url)) : undefined,

@@ -18,7 +18,7 @@
  */
 import { LIMITS, type TransportEnvelope } from '@simple-monitor/protocol'
 import { logger } from '@simple-monitor/utils'
-import { EnvelopeCache } from './idbCache'
+import { EnvelopeCache, type CachedEnvelope } from './idbCache'
 
 /** 批量参数（总纲 §七 M2：5s 或 10 条触发 flush） */
 export const FLUSH_INTERVAL_MS = 5000
@@ -330,25 +330,38 @@ export class BatchSender {
     this.deps.onSendResult?.(false, dsn, payloads.length)
   }
 
-  /** 启动时重放离线缓存（fire-and-forget，失败静默——下次启动再试） */
+  /**
+   * 启动时重放离线缓存：确认 2xx 才删除对应条目，网络失败/非 2xx 保留待下轮
+   * （§3.8 P1：旧实现取走即删，重放失败即丢信封）。堆积由缓存上限（50 条丢最老）
+   * 与过期（3 天）兜底，不因失败保留而无限增长。
+   */
   async replay(): Promise<void> {
+    let cached: Array<CachedEnvelope & { id: number }>
     try {
-      const cached = await this.cache.popAll()
-      for (const item of cached) {
-        try {
-          await fetch(item.dsn, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: item.json,
-            keepalive: item.json.length <= KEEPALIVE_MAX_BYTES,
-            signal: sendTimeoutSignal(),
-          })
-        } catch {
-          // 仍不可达：放弃本轮，不回写（避免僵尸数据滚雪球）
-        }
-      }
+      cached = await this.cache.drain()
     } catch {
-      /* 缓存不可用 */
+      return /* 缓存不可用 */
+    }
+    for (const item of cached) {
+      try {
+        const res = await fetch(item.dsn, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: item.json,
+          keepalive: item.json.length <= KEEPALIVE_MAX_BYTES,
+          signal: sendTimeoutSignal(),
+        })
+        if (res.ok) {
+          try {
+            await this.cache.deleteById(item.id)
+          } catch {
+            /* 删除失败：下轮重复发送（服务端按 errorId 幂等），优于丢失 */
+          }
+        }
+        // 非 2xx / 网络失败：保留缓存，下轮再试
+      } catch {
+        // 仍不可达：保留缓存，放弃本轮
+      }
     }
   }
 

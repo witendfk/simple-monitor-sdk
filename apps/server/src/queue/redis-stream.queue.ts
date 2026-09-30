@@ -69,13 +69,9 @@ export class RedisStreamQueue implements IEventQueue, OnApplicationShutdown {
     if (this.running) return
     this.running = true
     this.handler = handler
-    // 兜底：循环任何意外终止都记日志并退避重启（防静默停摆）；重启链仍受 running 门控
-    this.loopPromise = this.consumeLoop().catch((error) => {
-      this.logger.error(`consume loop crashed, restarting: ${String(error)}`)
-      if (this.running) {
-        this.loopPromise = this.sleep(RECONNECT_DELAY_MS).then(() => this.consumeLoop())
-      }
-    })
+    // 监管循环：consumeLoop 任何意外终止都在同一受控 promise 内重启——
+    // 连续任意次崩溃不产生 unhandled rejection、不静默停摆（§3.8：重启链二次崩溃教训）
+    this.loopPromise = this.supervisedLoop()
     this.claimTimer = setInterval(() => {
       void this.reclaimPending()
     }, CLAIM_INTERVAL_MS)
@@ -100,6 +96,20 @@ export class RedisStreamQueue implements IEventQueue, OnApplicationShutdown {
       deadLettered: this.deadLettered,
       processed: this.processed,
       failed: this.failed,
+    }
+  }
+
+  /** 监管循环：内层意外终止 → 记日志退避重启，外层统一捕获（递归挂链的二次崩溃缺口已消灭） */
+  private async supervisedLoop(): Promise<void> {
+    while (this.running) {
+      try {
+        await this.consumeLoop()
+      } catch (error) {
+        this.logger.error(`consume loop crashed, restarting: ${String(error)}`)
+      }
+      if (this.running) {
+        await this.sleep(RECONNECT_DELAY_MS)
+      }
     }
   }
 

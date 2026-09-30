@@ -59,12 +59,12 @@ import { QueryController } from './query/query.controller'
     AlertRuleStore,
     {
       provide: AlertEngine,
-      inject: [STORAGE_TOKEN, AlertRuleStore],
-      useFactory: (storage: IEventStorage, store: AlertRuleStore) =>
+      inject: [STORAGE_TOKEN, AlertRuleStore, CONFIG_TOKEN],
+      useFactory: (storage: IEventStorage, store: AlertRuleStore, config: ServerConfig) =>
         new AlertEngine(
           storage,
           store,
-          new FetchWebhookSender(),
+          new FetchWebhookSender({ allowPrivate: config.webhookAllowPrivate }),
           // 评估周期：测试/演示可用 ALERT_CHECK_INTERVAL_MS 调小
           Number(process.env.ALERT_CHECK_INTERVAL_MS) || 5 * 60_000
         ),

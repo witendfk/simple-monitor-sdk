@@ -10,6 +10,7 @@
 import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common'
 import type { IEventStorage } from '../storage/event-storage'
 import { AlertRuleStore } from './rule-store'
+import { isWebhookUrlConnectAllowed } from './webhook-net'
 import {
   isSpike,
   isThresholdBreached,
@@ -26,18 +27,47 @@ export interface WebhookSender {
 
 /** 挂起的 webhook 不能卡住评估循环（undici 默认超时 300s） */
 const WEBHOOK_TIMEOUT_MS = 5_000
+/** 重定向逐跳校验的上限（每跳都重新过地址检查，不允许自动跟随到未检查目标） */
+const WEBHOOK_MAX_REDIRECTS = 3
+
+export interface WebhookSenderOptions {
+  /** 本地演示放开私网限制（config.webhookAllowPrivate） */
+  allowPrivate?: boolean
+  /** 连接前地址校验（默认 DNS 解析 + 私网判定；测试注入替身） */
+  resolveAllowed?: (url: string) => Promise<boolean>
+}
 
 export class FetchWebhookSender implements WebhookSender {
+  constructor(private readonly options: WebhookSenderOptions = {}) {}
+
   async send(url: string, payload: Record<string, unknown>): Promise<void> {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-    })
-    if (!res.ok) {
-      throw new Error(`webhook responded ${res.status}`)
+    const resolveAllowed = this.options.resolveAllowed ?? isWebhookUrlConnectAllowed
+    let current = url
+    for (let hop = 0; hop <= WEBHOOK_MAX_REDIRECTS; hop++) {
+      if (!this.options.allowPrivate) {
+        const allowed = await resolveAllowed(current)
+        if (!allowed) {
+          throw new Error(`webhook target blocked (private/unresolvable): ${current}`)
+        }
+      }
+      const res = await fetch(current, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+        // 手动跟随：重定向目标必须重新过地址校验，不允许 fetch 自动打向未检查地址
+        redirect: 'manual',
+      })
+      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+        current = new URL(res.headers.get('location') as string, current).href
+        continue
+      }
+      if (!res.ok) {
+        throw new Error(`webhook responded ${res.status}`)
+      }
+      return
     }
+    throw new Error(`webhook too many redirects (> ${WEBHOOK_MAX_REDIRECTS})`)
   }
 }
 

@@ -107,7 +107,7 @@ app.use(MonitorVue)
 | RT | **慢资源定位**（duration ≥ 阈值 + 阶段拆解 + 跨域处理） |
 | NavigationTiming | 加载瀑布（DNS / TCP / SSL / TTFB / DOM） |
 
-性能数据走统一 core transport（`eventType:performance`），卸载时尝试 sendBeacon。离线缓存重放目前存在再次失败即丢信封的问题，详见 [开发总纲 §3.8](./开发总纲.md)。
+性能数据走统一 core transport（`eventType:performance`），卸载时尝试 sendBeacon。离线缓存重放确认服务端 2xx 才删除、失败保留待重试（缓存上限 50 条/3 天过期兜底）。
 
 ### 用户行为（面包屑，自动）
 
