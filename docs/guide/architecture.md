@@ -10,5 +10,5 @@
 
 - **错误指纹两层分工**：SDK message 级（流量防刷屏）/ 服务端含首帧位置（分析精度）
 - **CLS session-window / INP 聚合+P98**：oracle 一致性测试对比官方库（同条目流，偏差断言进 CI）
-- **at-least-once**：先处理后确认，死信兜底；重复由指纹去重消化
+- **队列 at-least-once**：先处理后确认，死信兜底；重复消费的去重当前未实现（errorId 已入库，待补）。SDK 离线重放目前会先清空缓存、失败不回写，因此端到端尚不能保证 at-least-once（总纲 §3.8）。
 - **异步纪律**：fire-and-forget 链全部就地消化，监控不向宿主抛 unhandled rejection

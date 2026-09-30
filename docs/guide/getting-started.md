@@ -18,7 +18,7 @@ init({
 ```
 
 自动启用：JS/Promise/HTTP/资源错误采集、Web Vitals（FP/FCP/LCP/CLS/INP）、
-面包屑、批量批量上报（5s/10 条）+ gzip + 离线重放 + 卸载 sendBeacon。
+面包屑、批量上报（5s/10 条）+ gzip + 离线缓存重放 + 卸载时尝试 sendBeacon。重放再次失败时当前会丢失缓存信封；服务端公开接入 key 也尚不能作为独立管理凭证，详见 [服务端平台](./server.md)。
 
 ## 框架适配
 

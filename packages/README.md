@@ -194,13 +194,13 @@ pnpm dev
 import { init } from '@simple-monitor/web';
 
 init({
-  dsn: 'https://your-monitoring-endpoint.com',
-  trackerId: 'user-123',
-  enableErrorTracking: true,
-  enablePerformanceTracking: true,
-  enableHttpTracking: true,
+  dsn: 'https://your-monitoring-endpoint.com/report/batch',
+  apikey: 'your-apikey',
+  release: '1.0.0',
 });
 ```
+
+错误/性能/HTTP 采集默认全开；trackerId 自动生成，无需配置。完整配置矩阵见文档站「配置矩阵」页与 `@simple-monitor/types` 的 `InitOptions`。
 
 ### 开发命令
 
@@ -228,19 +228,26 @@ pnpm clean
 
 ## 配置选项
 
+> 配置项 = 承诺：只列 `InitOptions` 中真实存在且有消费点的项。
+
 | 选项 | 类型 | 默认值 | 描述 |
 |------|------|--------|------|
-| `dsn` | `string` | *必需* | 错误上报的数据源地址 |
-| `trackDsn` | `string` | `undefined` | 统计分析的上报地址 |
-| `trackerId` | `string \| number` | *自动生成* | 用户/追踪 ID |
-| `enableErrorTracking` | `boolean` | `true` | 启用自动错误追踪 |
-| `enablePerformanceTracking` | `boolean` | `true` | 启用性能监控 |
-| `enableHttpTracking` | `boolean` | `true` | 启用 HTTP 请求监控 |
-| `maxBreadcrumbs` | `number` | `10` | 最大面包屑数量 |
-| `throttleDelayTime` | `number` | `100` | 高频事件的节流延迟（毫秒） |
-| `useImageUpload` | `boolean` | `false` | 使用图片上报方式 |
-| `silent` | `boolean` | `true` | 禁用 SDK 控制台日志 |
-| `debug` | `boolean` | `false` | 启用调试模式 |
+| `dsn` | `string` | *必需* | 上报地址（`POST dsn/batch`，协议 v1 信封） |
+| `apikey` | `string` | *必需* | 项目标识（服务端鉴权） |
+| `trackDsn` | `string` | 回落 `dsn` | 性能数据独立通道 |
+| `release` / `env` | `string` | — | 发版/环境标识（发版对比维度） |
+| `sampleRate` | `number` | `1` | 性能采样率（错误始终 100%） |
+| `performance` | `boolean` | `true` | 性能采集开关 |
+| `enablePrivacyMask` | `boolean` | `true` | 隐私脱敏（手机号/身份证/卡号/凭证/JWT） |
+| `enableTraceId` + `includeHttpUrlTraceIdRegExp` | `boolean`/`RegExp` | `false` | traceparent 注入（W3C Trace Context） |
+| `filterXhrUrlRegExp` | `RegExp` | — | 敏感接口排除（完全不监控） |
+| `maxBreadcrumbs` | `number` | `10` | 最大面包屑数量（协议上限 50） |
+| `maxDuplicateCount` | `number` | `2` | 同错误上报次数上限 |
+| `throttleDelayTime` | `number` | `200` | 高频事件的节流延迟（毫秒） |
+| `useImgUpload` | `boolean` | `false` | 旧通道使用图片上报 |
+| `silentXxx` 系列 | `boolean` | `false` | 各事件源静默开关 |
+| `disabled` | `boolean` | `false` | 停止上报（采集照常） |
+| `debug` | `boolean` | `false` | 启用 SDK 调试日志 |
 
 ## 数据流程
 

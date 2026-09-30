@@ -114,3 +114,10 @@ try {
 ## 依赖
 
 - `@simple-monitor/types` · `@simple-monitor/shared` · `@simple-monitor/utils`
+
+## 可靠性与隐私边界（2026-09-30 复审）
+
+- 离场使用 `sendBeacon` 尽力发送，不能保证送达；IndexedDB 缓存重放会在发送前取出并清空，若重放仍失败或返回非 2xx，当前不会保留该信封（`src/idbCache.ts`、`src/batchSender.ts`）。
+- 错误事件的 `message` 当前只按协议上限截断，没有在信封出口脱敏；业务错误文本若含凭证，仍可能随信封上报（`src/envelope.ts`）。
+
+修复优先级和验收条件见 [开发总纲 §3.8](../../开发总纲.md)。

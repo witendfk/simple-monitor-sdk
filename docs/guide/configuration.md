@@ -13,9 +13,9 @@
 | `enablePrivacyMask` | boolean | true | 隐私脱敏（手机号/身份证/卡号/凭证/JWT） |
 | `enableTraceId` + `includeHttpUrlTraceIdRegExp` | boolean/RegExp | false | traceparent 注入（W3C Trace Context） |
 | `filterXhrUrlRegExp` | RegExp | — | 敏感接口排除（完全不监控） |
-| `maxBreadcrumbs` | number | 10 | 面包屑容量 |
+| `maxBreadcrumbs` | number | 10 | 面包屑容量（协议上限 50，超限整信封被服务端拒收） |
 | `maxDuplicateCount` | number | 2 | 同错误上报次数上限 |
-| `silentXxx` 系列 | boolean | false | 静默开关（含 silentResource 独立资源错误开关） |
+| `silentXxx` 系列 | boolean | false | 静默开关（含 silentResource 独立资源错误开关；注：`silentHashchange` 当前未生效，路由静默走 `silentHistory`） |
 | `throttleDelayTime` | number | 200 | 点击采集节流 ms |
 | `disabled` | boolean | false | 停止上报（采集照常） |
 

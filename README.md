@@ -14,7 +14,7 @@ Simple Monitor SDK 是一个轻量级、模块化的前端监控方案，提供*
 - **📊 性能监控** — Web Vitals（FP/FCP/LCP/CLS/INP）+ FPS + 加载瀑布 + **RT 慢资源定位**
 - **🔖 用户行为** — 面包屑（HTTP / 点击 / 路由 / console），随错误上报
 - **🧩 框架适配** — Vue（Vue2/Vue3 双兼容）/ React（开箱即用 ErrorBoundary）
-- **⚡ 卸载可靠** — 页面卸载自动切 `sendBeacon`，不丢数据
+- **⚡ 离场发送** — 页面卸载自动切 `sendBeacon`；浏览器拒绝或网络失败时仍可能丢失数据
 - **📦 模块化** — 分层（基础/核心/端侧/门面），可按需引入子包
 
 ## 快速开始
@@ -92,7 +92,7 @@ app.use(MonitorVue)
 | HTTP | xhr / fetch 包装 | `FETCH_ERROR`（5xx / status 0；2xx 只进面包屑） |
 | 资源 | img/script/link `error` | `RESOURCE_ERROR` |
 
-同错误自动去重（`maxDuplicateCount`，默认 2 次）。SDK 自身上报地址被拦截，不自循环。
+同错误自动去重（`maxDuplicateCount`，默认 2 次）。SDK 自身上报地址在 XHR 通道被识别并跳过；fetch 通道暂未拦截（上报请求可能进面包屑，修复排期见开发总纲 §3.7）。
 
 ### 性能监控（默认开）
 
@@ -107,7 +107,7 @@ app.use(MonitorVue)
 | RT | **慢资源定位**（duration ≥ 阈值 + 阶段拆解 + 跨域处理） |
 | NavigationTiming | 加载瀑布（DNS / TCP / SSL / TTFB / DOM） |
 
-性能数据走统一 core transport（`eventType:performance`），卸载靠 sendBeacon。
+性能数据走统一 core transport（`eventType:performance`），卸载时尝试 sendBeacon。离线缓存重放目前存在再次失败即丢信封的问题，详见 [开发总纲 §3.8](./开发总纲.md)。
 
 ### 用户行为（面包屑，自动）
 
