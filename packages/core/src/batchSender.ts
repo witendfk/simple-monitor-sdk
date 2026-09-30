@@ -90,8 +90,13 @@ export class BatchSender {
       this.groups.set(dsn, group)
     }
     group.push({ dsn, data })
-    // 第二个条件当前不可达（10 < 100），防御性保留：MAX_BATCH_EVENTS 调大时兜底防内存膨胀
-    if (group.length >= MAX_BATCH_EVENTS || group.length >= MAX_BUFFERED_PER_DSN) {
+    // inFlight 期间 flush 是 no-op（防并发重发），组必须自限防无界膨胀（§3.7 P1）：
+    // 超缓冲上限丢最老——监控数据可容忍丢失，对齐队列 MAXLEN「丢最老」语义
+    if (group.length >= MAX_BUFFERED_PER_DSN) {
+      group.shift()
+      logger.warn(`batchSender buffer overflow for ${dsn}, dropped oldest event`)
+    }
+    if (group.length >= MAX_BATCH_EVENTS) {
       void this.flush(dsn)
       return
     }
@@ -288,6 +293,8 @@ export class BatchSender {
           headers: { 'Content-Type': contentType },
           body: body as BodyInit,
           keepalive,
+          // 挂起的服务端不能让 inFlight 永不释放（组随之无界等待）——超时视同网络错误进退避
+          signal: sendTimeoutSignal(),
         })
         if (res.ok) {
           this.deps.onSendResult?.(true, dsn, payloads.length)
@@ -334,6 +341,7 @@ export class BatchSender {
             headers: { 'Content-Type': 'application/json' },
             body: item.json,
             keepalive: item.json.length <= KEEPALIVE_MAX_BYTES,
+            signal: sendTimeoutSignal(),
           })
         } catch {
           // 仍不可达：放弃本轮，不回写（避免僵尸数据滚雪球）
@@ -353,6 +361,18 @@ export class BatchSender {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** 发送超时（挂起的服务端会让 inFlight 永不释放）；旧环境无 AbortSignal.timeout 时退化为不限时 */
+const SEND_TIMEOUT_MS = 15_000
+function sendTimeoutSignal(): AbortSignal | undefined {
+  try {
+    return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(SEND_TIMEOUT_MS)
+      : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** CompressionStream gzip（可用且载荷足够大时）；失败降级原文 */

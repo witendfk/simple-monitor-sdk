@@ -35,9 +35,9 @@ describe('判定纯函数', () => {
   })
 })
 
-/** 存储桩：overview 返回预设错误数 */
+/** 存储桩：overview 返回预设错误数（签名随 IEventStorage：首参 apikey，桩忽略） */
 function stubStorage(errorCount: number): IEventStorage {
-  const overview = (_sinceMs: number): OverviewStats => ({
+  const overview = (): OverviewStats => ({
     since: '',
     until: '',
     totalEvents: errorCount,
@@ -48,7 +48,7 @@ function stubStorage(errorCount: number): IEventStorage {
   })
   return {
     saveBatch: async () => undefined,
-    overview: async (sinceMs: number): Promise<OverviewStats> => overview(sinceMs),
+    overview: async (): Promise<OverviewStats> => overview(),
     errorGroups: async () => [],
     errorDetail: async () => null,
     performanceQuantiles: async () => ({ metric: 'x', count: 1, p50: 100, p75: 100, p95: 100 }),
@@ -82,7 +82,8 @@ describe('AlertEngine', () => {
     const { engine, store } = makeEngine(
       {
         ...storage,
-        overview: async (sinceMs: number): Promise<OverviewStats> => ({
+        // 签名 (apikey, sinceMs)：按规则归属项目查询（apikey 隔离）
+        overview: async (_apikey: string, sinceMs: number): Promise<OverviewStats> => ({
           since: '',
           until: '',
           totalEvents: 50,
@@ -212,8 +213,8 @@ describe('告警规则 API', () => {
   it('创建 → 列表 → 删除 → 404', async () => {
     const created = await request(server)
       .post('/api/alert-rules')
+      .set('x-api-key', 'demo-key')
       .send({
-        apikey: 'demo-key',
         type: 'error_spike',
         name: 'e2e 规则',
         webhookUrl: 'https://hooks.example.com/e2e',
@@ -224,30 +225,57 @@ describe('告警规则 API', () => {
     expect(created.status).toBe(201)
     const id = created.body.id as string
 
-    const list = await request(server).get('/api/alert-rules')
+    const list = await request(server).get('/api/alert-rules').set('x-api-key', 'demo-key')
     expect(list.body.some((r: { id: string }) => r.id === id)).toBe(true)
 
-    const del = await request(server).delete(`/api/alert-rules/${id}`)
+    const del = await request(server).delete(`/api/alert-rules/${id}`).set('x-api-key', 'demo-key')
     expect(del.status).toBe(200)
-    const gone = await request(server).delete(`/api/alert-rules/${id}`)
+    const gone = await request(server).delete(`/api/alert-rules/${id}`).set('x-api-key', 'demo-key')
     expect(gone.status).toBe(404)
   })
 
-  it('非法 webhookUrl 被拒（安全清单：不做开放重定向面）', async () => {
+  it('无鉴权头 / 未注册 apikey → 401（规则 CRUD 不再匿名可用）', async () => {
+    const noHeader = await request(server).get('/api/alert-rules')
+    expect(noHeader.status).toBe(401)
+    const ghost = await request(server).get('/api/alert-rules').set('x-api-key', 'ghost')
+    expect(ghost.status).toBe(401)
+  })
+
+  it('非法 webhookUrl 被拒（协议白名单 + 非 URL 即 400）', async () => {
     const res = await request(server)
       .post('/api/alert-rules')
+      .set('x-api-key', 'demo-key')
       .send({
-        apikey: 'demo-key',
         type: 'perf_threshold',
         name: 'bad',
         webhookUrl: 'not-a-url',
         config: { metric: 'lcp', threshold: 4000 },
       })
-    expect(res.status).toBe(404) // normalize 失败走 NotFound 语义
+    expect(res.status).toBe(400)
+  })
+
+  it('私网/元数据 webhookUrl 被 SSRF 防护拒绝', async () => {
+    for (const url of [
+      'http://169.254.169.254/latest/meta-data/',
+      'http://localhost:6379/',
+      'http://127.0.0.1:8080/hook',
+      'file:///etc/passwd',
+    ]) {
+      const res = await request(server)
+        .post('/api/alert-rules')
+        .set('x-api-key', 'demo-key')
+        .send({
+          type: 'perf_threshold',
+          name: 'ssrf',
+          webhookUrl: url,
+          config: { metric: 'lcp', threshold: 4000 },
+        })
+      expect(res.status, `webhookUrl ${url} 应被拒`).toBe(400)
+    }
   })
 
   it('触发记录接口可查询', async () => {
-    const res = await request(server).get('/api/alert-fires?limit=10')
+    const res = await request(server).get('/api/alert-fires?limit=10').set('x-api-key', 'demo-key')
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
   })

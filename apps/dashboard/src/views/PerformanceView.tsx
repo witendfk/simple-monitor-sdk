@@ -39,7 +39,11 @@ export function PerformanceView({ refreshKey }: { refreshKey: number }) {
 
   const option = useMemo(() => {
     return {
-      title: { text: `${metric} 分位（近 24h，样本 ${data?.count ?? 0}）`, left: 'center', textStyle: { fontSize: 13 } },
+      title: {
+        text: `${metric} 分位（近 24h，样本 ${data?.count ?? 0}）`,
+        left: 'center',
+        textStyle: { fontSize: 13 },
+      },
       xAxis: { type: 'category' as const, data: ['P50', 'P75', 'P95'] },
       yAxis: { type: 'value' as const },
       series: [
@@ -48,7 +52,11 @@ export function PerformanceView({ refreshKey }: { refreshKey: number }) {
           data: [data?.p50, data?.p75, data?.p95].map((v) => (typeof v === 'number' ? v : 0)),
           barWidth: 60,
           itemStyle: { color: '#2c5f8a' },
-          label: { show: true, position: 'top' as const, formatter: ({ value }: { value: number }) => String(value) },
+          label: {
+            show: true,
+            position: 'top' as const,
+            formatter: ({ value }: { value: number }) => String(value),
+          },
         },
       ],
       tooltip: { trigger: 'axis' as const },

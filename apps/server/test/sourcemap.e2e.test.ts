@@ -10,7 +10,8 @@ import type { Server } from 'http'
 import { Test } from '@nestjs/testing'
 import { transformSync } from 'esbuild'
 import { PROTOCOL_VERSION, type TransportEnvelope } from '@simple-monitor/protocol'
-import { AppModule, CONFIG_TOKEN } from '../src/app.module'
+import { AppModule } from '../src/app.module'
+import { CONFIG_TOKEN } from '../src/config'
 import { IngestService } from '../src/ingest/ingest.service'
 import type { ServerConfig } from '../src/config'
 
@@ -44,6 +45,7 @@ describe('SourceMap 符号化全链路', () => {
       .overrideProvider(CONFIG_TOKEN)
       .useValue({
         port: 0,
+        webhookAllowPrivate: false,
         projectsJson: JSON.stringify([{ apikey: 'k', name: 't', rateLimitPerMin: 1000 }]),
       } satisfies ServerConfig)
       .compile()
@@ -61,13 +63,13 @@ describe('SourceMap 符号化全链路', () => {
   async function postJson(path: string, body: unknown): Promise<request.Response> {
     return request(server)
       .post(path)
+      .set('x-api-key', 'k')
       .send(body as object)
   }
 
   it('上传 map → 上报压缩堆栈 → 详情返回原始源码位置', async () => {
-    // 2. 上传工件（CLI 同款请求形状）
+    // 2. 上传工件（CLI 同款请求形状；apikey 取鉴权头）
     const upload = await postJson('/api/sourcemaps', {
-      apikey: 'k',
       release: 'v1.2.3',
       url: 'app.js',
       map: generatedMap,
@@ -107,7 +109,7 @@ describe('SourceMap 符号化全链路', () => {
     let groups: Array<{ fingerprint: string }> = []
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 100))
-      const list = await request(server).get('/api/errors?limit=10')
+      const list = await request(server).get('/api/errors?limit=10').set('x-api-key', 'k')
       if (list.body.length > 0) {
         groups = list.body
         break
@@ -116,7 +118,9 @@ describe('SourceMap 符号化全链路', () => {
     expect(groups.length).toBeGreaterThan(0)
 
     // 5. 详情：symbolicatedStack 含原始源码位置
-    const detail = await request(server).get(`/api/errors/${groups[0].fingerprint}`)
+    const detail = await request(server)
+      .get(`/api/errors/${groups[0].fingerprint}`)
+      .set('x-api-key', 'k')
     expect(detail.status).toBe(200)
     const symbolicated = detail.body.symbolicatedStack?.[0]
     expect(symbolicated?.original).toBeTruthy()
@@ -146,7 +150,7 @@ describe('SourceMap 符号化全链路', () => {
     let fingerprint = ''
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 100))
-      const list = await request(server).get('/api/errors?limit=50')
+      const list = await request(server).get('/api/errors?limit=50').set('x-api-key', 'k')
       const group = (list.body as Array<{ message: string; fingerprint: string }>).find(
         (g) => g.message === 'no release no map'
       )
@@ -156,26 +160,24 @@ describe('SourceMap 符号化全链路', () => {
       }
     }
     expect(fingerprint).toBeTruthy()
-    const detail = await request(server).get(`/api/errors/${fingerprint}`)
+    const detail = await request(server).get(`/api/errors/${fingerprint}`).set('x-api-key', 'k')
     expect(detail.body.symbolicatedStack?.[0].original ?? null).toBeNull()
   })
 
-  it('非法 map / 未注册 apikey 的上传被拒绝', async () => {
+  it('非法 map / 未注册鉴权头的上传被拒绝', async () => {
     const bad = await postJson('/api/sourcemaps', {
-      apikey: 'k',
       release: 'v1',
       url: 'a.js',
       map: 'not-json{{',
     })
-    expect([400, 404]).toContain(bad.status)
+    expect(bad.status).toBe(400)
 
-    const unknown = await postJson('/api/sourcemaps', {
-      apikey: 'ghost',
-      release: 'v1',
-      url: 'a.js',
-      map: '{"version":3,"mappings":"AAAA"}',
-    })
-    expect(unknown.status).toBe(404)
+    // 未注册 apikey（鉴权层拒绝，401 早于 body 校验）
+    const unknown = await request(server)
+      .post('/api/sourcemaps')
+      .set('x-api-key', 'ghost')
+      .send({ release: 'v1', url: 'a.js', map: '{"version":3,"mappings":"AAAA"}' })
+    expect(unknown.status).toBe(401)
   })
 })
 

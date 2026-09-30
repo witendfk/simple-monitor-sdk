@@ -36,6 +36,21 @@ describe('fetch 采集（window.fetch 先 stub 后 init）', () => {
     expect(sent.message).toContain('跨域限制或域名不存在')
   })
 
+  it('fetch 失败路径的请求体同样脱敏（失败分支不漏 mask，§3.7 P0-1）', async () => {
+    stubFetch.mockReturnValueOnce(Promise.reject(new TypeError('network down')))
+    await expect(
+      window.fetch('http://api.example.com/login', {
+        method: 'POST',
+        body: 'password=secret123&uid=42',
+      })
+    ).rejects.toThrow('network down')
+    await new Promise((r) => setTimeout(r, 0))
+
+    const sent = (sendSpy as any).mock.calls[0][0]
+    expect(sent.request.data).toContain('[credential]')
+    expect(sent.request.data).not.toContain('secret123')
+  })
+
   it('fetch 5xx 二进制大响应：采集状态但跳过 body 读取（防内存膨胀）', async () => {
     stubFetch.mockReturnValueOnce(
       Promise.resolve(

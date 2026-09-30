@@ -7,7 +7,7 @@
  *  - 冷却：ruleId → lastFiredAt，窗口内跳过（投递失败不进入冷却，下轮重试）
  *  - 异步纪律：评估循环是 setInterval 驱动的 fire-and-forget，全链就地消化
  */
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common'
 import type { IEventStorage } from '../storage/event-storage'
 import { AlertRuleStore } from './rule-store'
 import {
@@ -24,12 +24,16 @@ export interface WebhookSender {
   send(url: string, payload: Record<string, unknown>): Promise<void>
 }
 
+/** 挂起的 webhook 不能卡住评估循环（undici 默认超时 300s） */
+const WEBHOOK_TIMEOUT_MS = 5_000
+
 export class FetchWebhookSender implements WebhookSender {
   async send(url: string, payload: Record<string, unknown>): Promise<void> {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
     })
     if (!res.ok) {
       throw new Error(`webhook responded ${res.status}`)
@@ -40,7 +44,7 @@ export class FetchWebhookSender implements WebhookSender {
 const DEFAULT_CHECK_INTERVAL_MS = 5 * 60_000
 
 @Injectable()
-export class AlertEngine {
+export class AlertEngine implements OnApplicationShutdown {
   private readonly logger = new Logger(AlertEngine.name)
   private timer: ReturnType<typeof setInterval> | null = null
   private evaluating = false
@@ -70,6 +74,10 @@ export class AlertEngine {
       clearInterval(this.timer)
       this.timer = null
     }
+  }
+
+  onApplicationShutdown(): void {
+    this.stop()
   }
 
   /** 评估全部启用规则；单规则异常不影响其他规则（错误隔离纪律） */
@@ -105,8 +113,9 @@ export class AlertEngine {
     if (rule.type === 'error_spike') {
       const cfg = rule.config as ErrorSpikeConfig
       const windowMs = cfg.windowMinutes * 60_000
-      const recent = await this.storage.overview(windowMs)
-      const baseline = await this.storage.overview(cfg.baselineMinutes * 60_000)
+      // 按规则归属项目查询：跨项目数据隔离（总纲 §3.7 P0-4）
+      const recent = await this.storage.overview(rule.apikey, windowMs)
+      const baseline = await this.storage.overview(rule.apikey, cfg.baselineMinutes * 60_000)
       const baselineAvgPerWindow =
         baseline.errorCount / Math.max(1, cfg.baselineMinutes / cfg.windowMinutes)
       if (!isSpike({ recentErrorCount: recent.errorCount, baselineAvgPerWindow }, cfg)) {
@@ -126,6 +135,7 @@ export class AlertEngine {
 
     const cfg = rule.config as PerfThresholdConfig
     const quantiles = await this.storage.performanceQuantiles(
+      rule.apikey,
       cfg.metric,
       cfg.windowMinutes * 60_000
     )

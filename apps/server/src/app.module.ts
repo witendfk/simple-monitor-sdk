@@ -5,7 +5,7 @@
  */
 import { Module } from '@nestjs/common'
 import { FetchWebhookSender } from './alert/alert-engine'
-import { loadConfig, type ServerConfig } from './config'
+import { loadConfig, CONFIG_TOKEN, type ServerConfig } from './config'
 import { ProjectsService } from './projects/projects.service'
 import { QUEUE_TOKEN, type IEventQueue } from './queue/event-queue'
 import { MemoryQueue } from './queue/memory.queue'
@@ -26,8 +26,6 @@ import { AlertRuleStore } from './alert/rule-store'
 import { AlertEngine } from './alert/alert-engine'
 import { AlertRulesController, AlertFiresController } from './alert/alert.controller'
 import { QueryController } from './query/query.controller'
-
-export const CONFIG_TOKEN = 'CONFIG'
 
 @Module({
   controllers: [ReportController, QueryController, AlertRulesController, AlertFiresController],

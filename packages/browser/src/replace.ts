@@ -175,6 +175,14 @@ function completeXhr(xhr: MonitorXMLHttpRequest, client: MonitorClient): void {
 }
 
 /**
+ * 请求体脱敏统一出口：成功/失败两条采集分支共用同一函数，
+ * 防止复制漂移再次漏掉 mask（隐私纪律：HTTP body 入信封前必脱敏+截断）。
+ */
+function sanitizeReqData(body: unknown): string {
+  return interceptStr(mask(typeof body === 'string' ? body : ''), 2048)
+}
+
+/**
  * 包装 window.fetch：记录请求信息，响应/失败时触发采集。
  * 二进制/大响应跳过 body 读取（clone().text() 会把整个 body 拉进内存）。
  */
@@ -214,10 +222,7 @@ export function fetchReplace(client: MonitorClient): void {
                   url,
                   method,
                   status: res.status,
-                  reqData: interceptStr(
-                    mask(typeof requestInit?.body === 'string' ? requestInit.body : ''),
-                    2048
-                  ),
+                  reqData: sanitizeReqData(requestInit?.body),
                   sTime,
                   elapsedTime: getTimestamp() - sTime,
                   time: sTime,
@@ -233,10 +238,7 @@ export function fetchReplace(client: MonitorClient): void {
                 url,
                 method,
                 status: 0,
-                reqData: interceptStr(
-                  typeof requestInit?.body === 'string' ? requestInit.body : '',
-                  2048
-                ),
+                reqData: sanitizeReqData(requestInit?.body),
                 sTime,
                 elapsedTime: getTimestamp() - sTime,
                 time: sTime,

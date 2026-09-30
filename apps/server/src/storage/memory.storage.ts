@@ -23,13 +23,13 @@ export class MemoryStorage implements IEventStorage {
     return this.events.length
   }
 
-  async overview(sinceMs: number): Promise<OverviewStats> {
+  async overview(apikey: string, sinceMs: number): Promise<OverviewStats> {
     const since = Date.now() - sinceMs
-    const scoped = this.events.filter((e) => e.ts.getTime() >= since)
+    const scoped = this.events.filter((e) => e.apikey === apikey && e.ts.getTime() >= since)
     const errorCount = scoped.filter((e) => e.kind === 'error').length
     const perfCount = scoped.filter((e) => e.kind === 'perf').length
     const sessions = new Set(scoped.map((e) => e.sessionId))
-    const groups = await this.errorGroups(10, sinceMs)
+    const groups = await this.errorGroups(apikey, 10, sinceMs)
     return {
       since: new Date(since).toISOString(),
       until: new Date().toISOString(),
@@ -46,12 +46,12 @@ export class MemoryStorage implements IEventStorage {
     }
   }
 
-  async errorGroups(limit: number, sinceMs?: number): Promise<ErrorGroup[]> {
+  async errorGroups(apikey: string, limit: number, sinceMs?: number): Promise<ErrorGroup[]> {
     const since = sinceMs ? Date.now() - sinceMs : 0
     const groups = new Map<string, ErrorGroup>()
     for (const e of this.events) {
       if (e.kind !== 'error' || !e.error) continue
-      if (e.ts.getTime() < since) continue
+      if (e.apikey !== apikey || e.ts.getTime() < since) continue
       const key = e.error.fingerprint
       const existing = groups.get(key)
       if (!existing) {
@@ -86,20 +86,25 @@ export class MemoryStorage implements IEventStorage {
     return [...groups.values()].sort((a, b) => b.count - a.count).slice(0, limit)
   }
 
-  async errorDetail(fingerprint: string): Promise<NormalizedEvent | null> {
+  async errorDetail(apikey: string, fingerprint: string): Promise<NormalizedEvent | null> {
     const matches = this.events.filter(
-      (e) => e.kind === 'error' && e.error?.fingerprint === fingerprint
+      (e) => e.kind === 'error' && e.apikey === apikey && e.error?.fingerprint === fingerprint
     )
     if (matches.length === 0) return null
     return matches[matches.length - 1]
   }
 
-  async performanceQuantiles(metric: string, sinceMs: number): Promise<PerfQuantiles> {
+  async performanceQuantiles(
+    apikey: string,
+    metric: string,
+    sinceMs: number
+  ): Promise<PerfQuantiles> {
     const since = Date.now() - sinceMs
     const values = this.events
       .filter(
         (e) =>
           e.kind === 'perf' &&
+          e.apikey === apikey &&
           e.type === metric &&
           e.ts.getTime() >= since &&
           e.perf?.[0]?.value !== undefined

@@ -38,7 +38,12 @@ export class Queue {
     this.stack.length = 0
     this.isFlushing = false
     for (let i = 0; i < temp.length; i++) {
-      temp[i]()
+      try {
+        temp[i]()
+      } catch {
+        // 逐函数隔离：单个上报函数抛错不允许中断队列中其余请求，
+        // 也不允许沿 micro.then 逃逸成 unhandled rejection（异步纪律）
+      }
     }
   }
 }

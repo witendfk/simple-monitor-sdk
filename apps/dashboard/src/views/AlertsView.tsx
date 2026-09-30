@@ -2,7 +2,7 @@
  * 告警视图：规则管理（创建/启停/删除）+ 触发记录
  */
 import { useCallback, useEffect, useState } from 'react'
-import { alertApi, type AlertFire, type AlertRule, type AlertRule as AlertRuleType } from '../api'
+import { alertApi, type AlertFire, type AlertRule as AlertRuleType } from '../api'
 
 export function AlertsView({ refreshKey }: { refreshKey: number }) {
   const [rules, setRules] = useState<AlertRuleType[]>([])
@@ -58,12 +58,8 @@ export function AlertsView({ refreshKey }: { refreshKey: number }) {
   const toggle = async (rule: AlertRuleType): Promise<void> => {
     // 启停 = 删除 + 重建（内存存储无 update；Postgres 切片换 PUT）
     await alertApi.remove(rule.id).catch(() => undefined)
-    if (rule.enabled) {
-      await alertApi.create({ ...rule, enabled: false }).catch(() => undefined)
-    } else {
-      const { id: _id, ...rest } = rule
-      await alertApi.create(rest).catch(() => undefined)
-    }
+    const { id: _id, ...rest } = rule
+    await alertApi.create({ ...rest, enabled: !rule.enabled }).catch(() => undefined)
     load()
   }
 
@@ -161,8 +157,7 @@ export function AlertsView({ refreshKey }: { refreshKey: number }) {
         {fires.map((f) => (
           <li key={f.id}>
             <span className="muted">{new Date(f.firedAt).toLocaleString()}</span>{' '}
-            <strong>{f.ruleName}</strong>{' '}
-            <span className="mono">{f.message}</span>
+            <strong>{f.ruleName}</strong> <span className="mono">{f.message}</span>
           </li>
         ))}
       </ul>

@@ -43,4 +43,16 @@ describe('Queue', () => {
     await Promise.resolve()
     expect(fn).not.toHaveBeenCalled()
   })
+
+  it('单个上报函数抛错：不影响其余函数执行，且不逃逸 unhandled rejection（§3.7 P1）', async () => {
+    const queue = new Queue()
+    const good = vi.fn()
+    queue.addFn(() => {
+      throw new SyntaxError('bad dsn url')
+    })
+    queue.addFn(good)
+    await Promise.resolve()
+    // 抛错的第一个函数不阻断第二个；Promise.resolve().then 链未 reject
+    expect(good).toHaveBeenCalledTimes(1)
+  })
 })

@@ -4,7 +4,13 @@
 import { useEffect, useState } from 'react'
 import { api, type ErrorDetail } from '../api'
 
-export function ErrorDetailView({ fingerprint, onBack }: { fingerprint: string; onBack: () => void }) {
+export function ErrorDetailView({
+  fingerprint,
+  onBack,
+}: {
+  fingerprint: string
+  onBack: () => void
+}) {
   const [detail, setDetail] = useState<ErrorDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -25,7 +31,9 @@ export function ErrorDetailView({ fingerprint, onBack }: { fingerprint: string; 
       </button>
       <h3>
         <code>{detail.type}</code>
-        {detail.error?.componentName && <span className="muted"> @{detail.error.componentName}</span>}
+        {detail.error?.componentName && (
+          <span className="muted"> @{detail.error.componentName}</span>
+        )}
       </h3>
       <p className="mono error-text">{detail.error?.message}</p>
       <p className="muted">
@@ -37,8 +45,9 @@ export function ErrorDetailView({ fingerprint, onBack }: { fingerprint: string; 
 
       <h4>堆栈{detail.symbolicatedStack?.some((f) => f.original) && '（已符号化 ✅）'}</h4>
       <ol className="stack-list">
-        {(detail.symbolicatedStack ??
-          (detail.error?.stackFrames ?? []).map((f) => ({ ...f, original: null as null }))   
+        {(
+          detail.symbolicatedStack ??
+          (detail.error?.stackFrames ?? []).map((f) => ({ ...f, original: null as null }))
         ).map((f, i) => (
           <li key={i} className="stack-frame">
             <div className="mono">
@@ -61,7 +70,9 @@ export function ErrorDetailView({ fingerprint, onBack }: { fingerprint: string; 
           <li key={i}>
             <span className="muted">{b.time ? new Date(b.time).toLocaleTimeString() : '—'}</span>{' '}
             <code>{b.type}</code>{' '}
-            <span className="mono">{truncate(typeof b.data === 'string' ? b.data : JSON.stringify(b.data), 120)}</span>
+            <span className="mono">
+              {truncate(typeof b.data === 'string' ? b.data : JSON.stringify(b.data), 120)}
+            </span>
           </li>
         ))}
       </ul>

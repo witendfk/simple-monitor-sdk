@@ -69,7 +69,13 @@ export class RedisStreamQueue implements IEventQueue, OnApplicationShutdown {
     if (this.running) return
     this.running = true
     this.handler = handler
-    this.loopPromise = this.consumeLoop()
+    // 兜底：循环任何意外终止都记日志并退避重启（防静默停摆）；重启链仍受 running 门控
+    this.loopPromise = this.consumeLoop().catch((error) => {
+      this.logger.error(`consume loop crashed, restarting: ${String(error)}`)
+      if (this.running) {
+        this.loopPromise = this.sleep(RECONNECT_DELAY_MS).then(() => this.consumeLoop())
+      }
+    })
     this.claimTimer = setInterval(() => {
       void this.reclaimPending()
     }, CLAIM_INTERVAL_MS)
@@ -110,7 +116,13 @@ export class RedisStreamQueue implements IEventQueue, OnApplicationShutdown {
       }
       if (batch.length === 0) continue
       for (const message of batch) {
-        await this.processOne(message)
+        try {
+          await this.processOne(message)
+        } catch (error) {
+          // 单消息兜底：处理链路（含死信写入）撞上 Redis 故障时不得击穿循环——
+          // 不 ack 留 pending，由 reclaimPending 重投
+          this.logger.warn(`message ${message.id} unhandled failure: ${String(error)}`)
+        }
       }
     }
   }
@@ -165,6 +177,8 @@ export class RedisStreamQueue implements IEventQueue, OnApplicationShutdown {
       this.buffered = Math.max(0, this.buffered - 1)
     } catch (error) {
       this.failed += 1
+      // handleFailure 内部还会访问 Redis（死信写入）——此处不捕获，
+      // 由 consumeLoop 的单消息兜底接住（抛出 = 本条未 ack，留 pending 重投）
       await this.handleFailure(message, error)
     }
   }
@@ -174,21 +188,25 @@ export class RedisStreamQueue implements IEventQueue, OnApplicationShutdown {
     this.attempts.set(message.id, attempts)
     this.logger.warn(`message ${message.id} attempt ${attempts} failed: ${String(error)}`)
     if (attempts >= MAX_ATTEMPTS) {
-      // 死信：确认原消息 + 落死信流（人工排查/重放）
-      await this.redis.xack(STREAM, GROUP, message.id)
-      await this.redis.xadd(
-        DEAD_STREAM,
-        'MAXLEN',
-        '~',
-        String(MAXLEN),
-        '*',
-        'payload',
-        message.payload,
-        'error',
-        String(error).slice(0, 500)
-      )
-      this.attempts.delete(message.id)
-      this.deadLettered += 1
+      // 死信：先落死信流再确认原消息——顺序颠倒会在两步之间崩溃时把消息丢没
+      try {
+        await this.redis.xadd(
+          DEAD_STREAM,
+          'MAXLEN',
+          '~',
+          String(MAXLEN),
+          '*',
+          'payload',
+          message.payload,
+          'error',
+          String(error).slice(0, 500)
+        )
+        await this.redis.xack(STREAM, GROUP, message.id)
+        this.attempts.delete(message.id)
+        this.deadLettered += 1
+      } catch {
+        // 死信写入失败（Redis 抖动）：不 ack 留 pending 重投，消息不丢
+      }
     }
     // 未达上限：不 XACK，留在 pending，由 reclaimPending 按 idle 重投
   }

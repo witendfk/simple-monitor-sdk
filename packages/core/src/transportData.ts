@@ -308,24 +308,26 @@ export class TransportData implements ITransportData {
         return
       }
 
-      const xhr = new XHRConstructor()
-      xhr.open('POST', url, true)
-      xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8')
-      xhr.withCredentials = true
-
-      // 执行 configReportXhr 钩子
-      if (typeof this.configReportXhr === 'function') {
-        try {
-          this.configReportXhr(xhr, data)
-        } catch (error) {
-          logger.error('configReportXhr hook error:', error)
-        }
-      }
-
       try {
+        const xhr = new XHRConstructor()
+        // open 对无法解析的 URL 同步抛 SyntaxError（如误配 'http://'）——
+        // 必须在 try 内，否则异常穿透队列中断其余待发请求并逃逸成 unhandled rejection
+        xhr.open('POST', url, true)
+        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8')
+        xhr.withCredentials = true
+
+        // 执行 configReportXhr 钩子
+        if (typeof this.configReportXhr === 'function') {
+          try {
+            this.configReportXhr(xhr, data)
+          } catch (error) {
+            logger.error('configReportXhr hook error:', error)
+          }
+        }
+
         xhr.send(JSON.stringify(data))
       } catch (error) {
-        logger.error('XHR send error:', error)
+        logger.error('XHR report error:', error)
       }
     }
     this.queue.addFn(requestFun)

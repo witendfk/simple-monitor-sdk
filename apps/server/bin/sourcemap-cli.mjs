@@ -59,10 +59,13 @@ for (let i = 0; i < urls.length; i++) {
 
   const res = await fetch(`${server}/api/sourcemaps`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ apikey, release, url: bundleUrl, map: mapContent }),
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apikey },
+    body: JSON.stringify({ release, url: bundleUrl, map: mapContent }),
   })
   if (!res.ok) {
+    if (res.status === 413) {
+      fatal(`上传失败 ${bundleUrl}: HTTP 413 —— map 超过服务端 body 上限（当前全局 256KB，真实项目 map 常为 MB 级；服务端需为 /api/sourcemaps 单独放开上限，见总纲 §3.7）`)
+    }
     fatal(`上传失败 ${bundleUrl}: HTTP ${res.status} ${await res.text()}`)
   }
   console.log(`[sourcemap-cli] uploaded ${bundleUrl} (release=${release})`)

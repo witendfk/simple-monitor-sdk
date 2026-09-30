@@ -5,8 +5,9 @@
  * 职责边界：只做转换与归一化，不做网络——发送/重试/缓存见 batchSender.ts。
  */
 import type { BreadcrumbPushData, DeviceInfo, ReportDataType } from '@simple-monitor/types'
-import { mask, sanitizePageUrl } from '@simple-monitor/utils'
+import { interceptStr, mask, sanitizePageUrl } from '@simple-monitor/utils'
 import {
+  LIMITS,
   PROTOCOL_VERSION,
   type Breadcrumb,
   type ErrorEvent,
@@ -45,12 +46,31 @@ function toStackFrames(stack: unknown): StackFrame[] | undefined {
   }))
 }
 
+/**
+ * 面包屑 data 是宿主可控内容的自由入口（路由 URL / XHR body / console 等），
+ * 作为第四隐私入口在此统一兜底：序列化 → 脱敏 → 截断（LIMITS.breadcrumbData）。
+ */
+function sanitizeBreadcrumbData(data: unknown): string | undefined {
+  if (data === null || data === undefined) return undefined
+  let text: string
+  if (typeof data === 'string') {
+    text = data
+  } else {
+    try {
+      text = JSON.stringify(data)
+    } catch {
+      return '[unserializable]'
+    }
+  }
+  return interceptStr(mask(text), LIMITS.breadcrumbData)
+}
+
 function toBreadcrumbs(stack: BreadcrumbPushData[] | undefined): Breadcrumb[] | undefined {
   if (!stack || stack.length === 0) return undefined
   return stack.map((b) => ({
     type: String(b.type ?? ''),
     category: b.category ? String(b.category) : undefined,
-    data: b.data,
+    data: sanitizeBreadcrumbData(b.data),
     level: b.level ? String(b.level) : undefined,
     time: typeof b.time === 'number' ? b.time : undefined,
   }))
@@ -74,7 +94,7 @@ export function toErrorEvent(data: ReportDataType, breadcrumbs?: BreadcrumbPushD
     kind: 'error',
     error: {
       type: String(data.type ?? 'UNKNOWN'),
-      message: String(data.message ?? ''),
+      message: interceptStr(String(data.message ?? ''), LIMITS.message),
       name: data.name ? String(data.name) : undefined,
       level: data.level ? String(data.level) : undefined,
       time: typeof data.time === 'number' ? data.time : undefined,
@@ -138,7 +158,8 @@ export function toPerfMetric(name: string, raw: unknown): PerfMetric | null {
   return {
     name,
     value,
-    score: score ?? undefined,
+    // 协议约束 score ∈ [0,1]：越界值会被服务端整信封拒收（连坐同批事件），此处钳制兜底
+    score: score === null ? undefined : Math.min(1, Math.max(0, score)),
     detail:
       detailSource && Object.keys(detailSource).length > 0
         ? (detailSource as Record<string, unknown>)

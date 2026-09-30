@@ -9,7 +9,8 @@ import type { Server } from 'http'
 import { Test } from '@nestjs/testing'
 import type { INestApplication } from '@nestjs/common'
 import { PROTOCOL_VERSION, type TransportEnvelope } from '@simple-monitor/protocol'
-import { AppModule, CONFIG_TOKEN } from '../src/app.module'
+import { AppModule } from '../src/app.module'
+import { CONFIG_TOKEN } from '../src/config'
 import { IngestService } from '../src/ingest/ingest.service'
 
 interface ErrorGroupSummary {
@@ -52,6 +53,7 @@ describe('server e2e（内存全链路）', () => {
       .overrideProvider(CONFIG_TOKEN)
       .useValue({
         port: 0,
+        webhookAllowPrivate: false,
         projectsJson: JSON.stringify([{ apikey: 'test-key', name: 'test', rateLimitPerMin: 3 }]),
       } satisfies ServerConfig)
       .overrideProvider(ProjectsService)
@@ -82,9 +84,11 @@ describe('server e2e（内存全链路）', () => {
     let groups: ErrorGroupSummary[] = []
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 100))
-      const overview = await request(server).get('/api/overview?sinceMinutes=60')
+      const overview = await request(server)
+        .get('/api/overview?sinceMinutes=60')
+        .set('x-api-key', 'test-key')
       if (overview.body.errorCount > 0) {
-        const list = await request(server).get('/api/errors?limit=10')
+        const list = await request(server).get('/api/errors?limit=10').set('x-api-key', 'test-key')
         groups = list.body
         break
       }
@@ -95,16 +99,25 @@ describe('server e2e（内存全链路）', () => {
     expect(groups[0].fingerprint).toBeTruthy()
 
     // 详情 API：指纹取回样本（含堆栈）
-    const detail = await request(server).get(`/api/errors/${groups[0].fingerprint}`)
+    const detail = await request(server)
+      .get(`/api/errors/${groups[0].fingerprint}`)
+      .set('x-api-key', 'test-key')
     expect(detail.status).toBe(200)
     expect(detail.body.error?.stackFrames?.[0].line).toBe(42)
 
     // 性能分位
-    const perf = await request(server).get(
-      '/api/performance?metric=largest-contentful-paint&sinceMinutes=60'
-    )
+    const perf = await request(server)
+      .get('/api/performance?metric=largest-contentful-paint&sinceMinutes=60')
+      .set('x-api-key', 'test-key')
     expect(perf.body.count).toBe(1)
     expect(perf.body.p75).toBe(2100)
+  })
+
+  it('/api/** 无鉴权头 → 401（查询端点不再匿名可读）', async () => {
+    const res = await request(server).get('/api/overview')
+    expect(res.status).toBe(401)
+    const badKey = await request(server).get('/api/overview').set('x-api-key', 'ghost')
+    expect(badKey.status).toBe(401)
   })
 
   it('非法信封 → 400 带校验问题清单', async () => {

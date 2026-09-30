@@ -36,6 +36,11 @@ describe('toPerfMetric（§3.1 红线：value 一律 number）', () => {
     expect(toPerfMetric('x', 'not-a-number')).toBeNull()
     expect(toPerfMetric('x', NaN)).toBeNull()
   })
+  it('score 钳制到 [0,1]（越界值会被服务端整信封拒收，§3.7 P1）', () => {
+    expect(toPerfMetric('x', { value: 1, score: 5 })!.score).toBe(1)
+    expect(toPerfMetric('x', { value: 1, score: -2 })!.score).toBe(0)
+    expect(toPerfMetric('x', { value: 1, score: 0.87 })!.score).toBe(0.87)
+  })
 })
 
 describe('toPerfEvent / toErrorEvent', () => {
@@ -95,6 +100,38 @@ describe('toPerfEvent / toErrorEvent', () => {
     )
     const result = validateEnvelope(envelope)
     expect(result.success).toBe(true)
+  })
+  it('隐私兜底：面包屑 data 序列化脱敏、凭证遮蔽、循环引用不炸（§3.7 P0-2）', () => {
+    const event = toErrorEvent({ type: ErrorTypes.JAVASCRIPT_ERROR, message: 'boom' } as any, [
+      { type: 'Route', data: { from: '/login?token=abc123', to: '/pay' }, time: 1 },
+      { type: 'XHR', data: 'Bearer eyabcdefgh12', time: 2 },
+      { type: 'Click', data: 'ok', time: 3 },
+    ])
+    const routeData = event.breadcrumbs?.[0].data as string
+    expect(typeof routeData).toBe('string')
+    expect(routeData).toContain('[credential]')
+    expect(routeData).not.toContain('abc123')
+    expect(event.breadcrumbs?.[1].data).toContain('[credential]')
+    // 超长 data 截断到 LIMITS.breadcrumbData（512 + 截断提示后缀）
+    const longEvent = toErrorEvent({ type: ErrorTypes.JAVASCRIPT_ERROR, message: 'x' } as any, [
+      { type: 'Click', data: 'y'.repeat(2000), time: 1 },
+    ])
+    expect((longEvent.breadcrumbs?.[0].data as string).length).toBeLessThan(560)
+    // 循环引用安全降级
+    const circular: any = { self: null }
+    circular.self = circular
+    const circEvent = toErrorEvent({ type: ErrorTypes.JAVASCRIPT_ERROR, message: 'x' } as any, [
+      { type: 'Click', data: circular, time: 1 },
+    ])
+    expect(circEvent.breadcrumbs?.[0].data).toBe('[unserializable]')
+  })
+  it('message 截断到 LIMITS.message（声明「SDK 发送端截断」落地）', () => {
+    const event = toErrorEvent({
+      type: ErrorTypes.JAVASCRIPT_ERROR,
+      message: 'm'.repeat(5000),
+    } as any)
+    expect(event.error.message.length).toBeLessThan(1100)
+    expect(event.error.message).toContain(`截取前${1024}个字符`)
   })
 })
 

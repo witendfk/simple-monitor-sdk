@@ -2,6 +2,8 @@
  * 服务端 API 客户端 + 响应类型（与 apps/server 查询接口一一对应）
  */
 const BASE = '/api'
+/** 看板访问身份：/api/** 经 x-api-key 鉴权（与 SDK 接入同源，构建时可覆盖） */
+const API_KEY: string = (import.meta.env.VITE_API_KEY as string | undefined) ?? 'demo-key'
 
 export interface ErrorGroup {
   fingerprint: string
@@ -75,7 +77,7 @@ export interface ErrorDetail {
 }
 
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await fetch(`${BASE}${path}`, { headers: { 'x-api-key': API_KEY } })
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`)
   return (await res.json()) as T
 }
@@ -106,14 +108,17 @@ export const alertApi = {
   create: (rule: Omit<AlertRule, 'id'>) =>
     fetch(`${BASE}/alert-rules`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
       body: JSON.stringify(rule),
     }).then(async (res) => {
       if (!res.ok) throw new Error(`create failed: ${res.status}`)
       return (await res.json()) as AlertRule
     }),
   remove: (id: string) =>
-    fetch(`${BASE}/alert-rules/${id}`, { method: 'DELETE' }).then((res) => {
+    fetch(`${BASE}/alert-rules/${id}`, {
+      method: 'DELETE',
+      headers: { 'x-api-key': API_KEY },
+    }).then((res) => {
       if (!res.ok) throw new Error(`delete failed: ${res.status}`)
     }),
   fires: (limit = 50) => getJson<AlertFire[]>(`/alert-fires?limit=${limit}`),

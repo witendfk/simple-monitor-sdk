@@ -43,11 +43,15 @@ export interface PerfQuantiles {
 
 export const STORAGE_TOKEN = 'STORAGE'
 
+/**
+ * 查询一律带 apikey（总纲 §3.7 P0-4）：跨项目数据隔离是存储层的职责，
+ * controller 从鉴权头透传，实现方必须过滤——漏过滤 = IDOR。
+ */
 export interface IEventStorage {
   /** 批量落库（ingest 调用） */
   saveBatch(events: NormalizedEvent[]): Promise<void>
-  overview(sinceMs: number): Promise<OverviewStats>
-  errorGroups(limit: number, sinceMs?: number): Promise<ErrorGroup[]>
-  errorDetail(fingerprint: string): Promise<NormalizedEvent | null>
-  performanceQuantiles(metric: string, sinceMs: number): Promise<PerfQuantiles>
+  overview(apikey: string, sinceMs: number): Promise<OverviewStats>
+  errorGroups(apikey: string, limit: number, sinceMs?: number): Promise<ErrorGroup[]>
+  errorDetail(apikey: string, fingerprint: string): Promise<NormalizedEvent | null>
+  performanceQuantiles(apikey: string, metric: string, sinceMs: number): Promise<PerfQuantiles>
 }

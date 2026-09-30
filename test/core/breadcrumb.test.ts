@@ -42,6 +42,13 @@ describe('Breadcrumb', () => {
     expect(breadcrumb.getStack().length).toBe(0)
   })
 
+  it('bindOptions 钳制 maxBreadcrumbs 到 [1, 协议上限 50]（防信封被服务端整批拒收）', () => {
+    breadcrumb.bindOptions({ maxBreadcrumbs: 100 })
+    expect(breadcrumb.maxBreadcrumbs).toBe(50)
+    breadcrumb.bindOptions({ maxBreadcrumbs: 0 })
+    expect(breadcrumb.maxBreadcrumbs).toBe(1)
+  })
+
   it('未提供 time 时自动填充时间戳', () => {
     breadcrumb.push(crumb('a'))
     expect(typeof breadcrumb.getStack()[0].time).toBe('number')

@@ -93,7 +93,7 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
     })
   }
 
-  async overview(sinceMs: number): Promise<OverviewStats> {
+  async overview(apikey: string, sinceMs: number): Promise<OverviewStats> {
     const since = new Date(Date.now() - sinceMs).toISOString()
     const rs = await this.client.query({
       query: `SELECT
@@ -101,13 +101,13 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
                 countIf(kind = 'error') AS errors,
                 countIf(kind = 'perf') AS perfs,
                 uniqExact(sessionId) AS sessions
-              FROM events WHERE ts >= {since:DateTime}`,
-      query_params: { since },
+              FROM events WHERE apikey = {apikey:String} AND ts >= {since:DateTime}`,
+      query_params: { apikey, since },
       format: 'JSONEachRow',
     })
     const rows = await rs.json<{ total: string; errors: string; perfs: string; sessions: string }>()
     const row = rows[0]
-    const groups = await this.errorGroups(10, sinceMs)
+    const groups = await this.errorGroups(apikey, 10, sinceMs)
     return {
       since,
       until: new Date().toISOString(),
@@ -124,7 +124,7 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
     }
   }
 
-  async errorGroups(limit: number, sinceMs?: number): Promise<ErrorGroup[]> {
+  async errorGroups(apikey: string, limit: number, sinceMs?: number): Promise<ErrorGroup[]> {
     const since = new Date(Date.now() - (sinceMs ?? 7 * 24 * 3600_000)).toISOString()
     const rs = await this.client.query({
       query: `SELECT
@@ -138,11 +138,11 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
                 groupUniqArray(release) AS releases,
                 argMinIf(release, ts, release != '') AS firstSeenRelease
               FROM events
-              WHERE kind = 'error' AND fingerprint != '' AND ts >= {since:DateTime}
+              WHERE apikey = {apikey:String} AND kind = 'error' AND fingerprint != '' AND ts >= {since:DateTime}
               GROUP BY fingerprint, type
               ORDER BY count DESC
               LIMIT {limit:UInt32}`,
-      query_params: { since, limit },
+      query_params: { apikey, since, limit },
       format: 'JSONEachRow',
     })
     const rows = await rs.json<{
@@ -175,16 +175,22 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
     }))
   }
 
-  async errorDetail(fingerprint: string): Promise<NormalizedEvent | null> {
+  async errorDetail(apikey: string, fingerprint: string): Promise<NormalizedEvent | null> {
+    // apikey/release 必须查回透传：符号化按 (apikey, release) 匹配工件（总纲 §3.7 P1）
     const rs = await this.client.query({
-      query: `SELECT stackFrames, breadcrumbs, errorMessage, type
+      query: `SELECT apikey, release, sessionId, page, viewId, stackFrames, breadcrumbs, errorMessage, type
               FROM events
-              WHERE fingerprint = {fp:String} AND kind = 'error'
+              WHERE apikey = {apikey:String} AND fingerprint = {fp:String} AND kind = 'error'
               ORDER BY ts DESC LIMIT 1`,
-      query_params: { fp: fingerprint },
+      query_params: { apikey, fp: fingerprint },
       format: 'JSONEachRow',
     })
     const rows = await rs.json<{
+      apikey: string
+      release: string
+      sessionId: string
+      page: string
+      viewId: string
       stackFrames: string
       breadcrumbs: string
       errorMessage: string
@@ -196,12 +202,14 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
       kind: 'error',
       type: row.type,
       ts: new Date(),
-      apikey: '',
+      apikey: row.apikey,
+      release: row.release || undefined,
       sdkName: '',
       sdkVersion: '',
-      sessionId: '',
+      sessionId: row.sessionId,
       trackerId: '',
-      page: '',
+      page: row.page,
+      viewId: row.viewId || undefined,
       device: {},
       error: {
         message: row.errorMessage,
@@ -212,7 +220,11 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
     }
   }
 
-  async performanceQuantiles(metric: string, sinceMs: number): Promise<PerfQuantiles> {
+  async performanceQuantiles(
+    apikey: string,
+    metric: string,
+    sinceMs: number
+  ): Promise<PerfQuantiles> {
     const since = new Date(Date.now() - sinceMs).toISOString()
     const rs = await this.client.query({
       query: `SELECT
@@ -221,8 +233,8 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
                 quantileTDigest(0.75)(metricValue) AS p75,
                 quantileTDigest(0.95)(metricValue) AS p95
               FROM events
-              WHERE kind = 'perf' AND metricName = {metric:String} AND ts >= {since:DateTime}`,
-      query_params: { metric, since },
+              WHERE apikey = {apikey:String} AND kind = 'perf' AND metricName = {metric:String} AND ts >= {since:DateTime}`,
+      query_params: { apikey, metric, since },
       format: 'JSONEachRow',
     })
     const rows = await rs.json<{ count: string; p50: number; p75: number; p95: number }>()

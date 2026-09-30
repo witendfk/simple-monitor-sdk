@@ -6,6 +6,7 @@ import {
   IBreadcrumb,
 } from '@simple-monitor/types'
 import { validateOption, getTimestamp, silentConsoleScope } from '@simple-monitor/utils'
+import { LIMITS } from '@simple-monitor/protocol'
 
 /**
  * 面包屑用户行为栈（M1 类化，ADR-1）
@@ -84,7 +85,8 @@ export class Breadcrumb implements IBreadcrumb {
   bindOptions(options: InitOptions = {}): void {
     const { maxBreadcrumbs, beforePushBreadcrumb } = options
     if (validateOption(maxBreadcrumbs, 'maxBreadcrumbs', 'number')) {
-      this.maxBreadcrumbs = maxBreadcrumbs!
+      // 钳制到协议上限：超限面包屑会让信封被服务端整批拒收（400 连坐同批事件）
+      this.maxBreadcrumbs = Math.max(1, Math.min(LIMITS.maxBreadcrumbs, maxBreadcrumbs!))
     }
     if (validateOption(beforePushBreadcrumb, 'beforePushBreadcrumb', 'function')) {
       this.beforePushBreadcrumb = beforePushBreadcrumb

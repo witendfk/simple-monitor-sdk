@@ -1,6 +1,7 @@
 /**
  * 查询 API（看板数据源）：概览 / 错误组 / 错误详情 / 性能分位。
  * 只面向 IEventStorage 接口——内存与 ClickHouse 实现对查询方透明。
+ * 鉴权（总纲 §3.7 P0-3/P0-4）：ApiKeyGuard + 全部查询按 req.apikey 隔离。
  */
 import {
   BadRequestException,
@@ -13,16 +14,24 @@ import {
   Param,
   Post,
   Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common'
+import type { Request } from 'express'
 import { z } from 'zod'
 import { PROJECTS_TOKEN } from '../report/report.controller'
 import { ProjectsService } from '../projects/projects.service'
+import { ApiKeyGuard } from '../auth/api-key.guard'
 import { STORAGE_TOKEN, type IEventStorage } from '../storage/event-storage'
 import { SourcemapService } from '../ingest/sourcemap.service'
 
 /** class 型参数一律显式 @Inject（vitest esbuild 无 design:paramTypes 元数据） */
 
+/** Guard 写入 req.apikey（见 api-key.guard.ts） */
+type AuthedRequest = Request & { apikey: string }
+
 @Controller('api')
+@UseGuards(ApiKeyGuard)
 export class QueryController {
   constructor(
     @Inject(STORAGE_TOKEN) private readonly storage: IEventStorage,
@@ -32,14 +41,19 @@ export class QueryController {
 
   /** GET /api/overview?sinceMinutes=60 */
   @Get('overview')
-  overview(@Query('sinceMinutes') sinceMinutes?: string) {
-    return this.storage.overview(parseSince(sinceMinutes, 60))
+  overview(@Req() req: AuthedRequest, @Query('sinceMinutes') sinceMinutes?: string) {
+    return this.storage.overview(req.apikey, parseSince(sinceMinutes, 60))
   }
 
   /** GET /api/errors?limit=50&sinceMinutes=10080 */
   @Get('errors')
-  errors(@Query('limit') limit?: string, @Query('sinceMinutes') sinceMinutes?: string) {
+  errors(
+    @Req() req: AuthedRequest,
+    @Query('limit') limit?: string,
+    @Query('sinceMinutes') sinceMinutes?: string
+  ) {
     return this.storage.errorGroups(
+      req.apikey,
       clamp(Number(limit) || 50, 1, 200),
       parseSince(sinceMinutes, 7 * 24 * 60)
     )
@@ -51,8 +65,8 @@ export class QueryController {
    * 将压缩帧还原为原始 source:line:column（无法还原的帧 original=null 透传）
    */
   @Get('errors/:fingerprint')
-  async errorDetail(@Param('fingerprint') fingerprint: string) {
-    const detail = await this.storage.errorDetail(fingerprint)
+  async errorDetail(@Req() req: AuthedRequest, @Param('fingerprint') fingerprint: string) {
+    const detail = await this.storage.errorDetail(req.apikey, fingerprint)
     if (!detail) throw new NotFoundException({ error: 'fingerprint not found' })
     const rawFrames = detail.error?.stackFrames ?? []
     const symbolicatedStack = this.sourcemaps.symbolicateStack(
@@ -65,13 +79,12 @@ export class QueryController {
 
   /**
    * POST /api/sourcemaps —— 构建后 CLI 上传工件
-   * body: { apikey, release, url, map }（map 为 source map JSON 内容）
+   * body: { release, url, map }（apikey 取鉴权头，防跨项目投毒工件）
    */
   @Post('sourcemaps')
   @HttpCode(201)
-  uploadSourcemap(@Body() body: unknown): { ok: true; stored: number } {
+  uploadSourcemap(@Req() req: AuthedRequest, @Body() body: unknown): { ok: true; stored: number } {
     const schema = z.object({
-      apikey: z.string().min(1),
       release: z.string().min(1),
       url: z.string().min(1),
       map: z.string().min(1),
@@ -90,27 +103,32 @@ export class QueryController {
     if (typeof mapContent.version !== 'number' || typeof mapContent.mappings !== 'string') {
       throw new BadRequestException({ error: 'map missing version/mappings' })
     }
-    if (!this.projects.exists(parsed.data.apikey)) {
-      throw new NotFoundException({ error: 'unknown apikey' })
-    }
-    const { apikey, release, url, map } = parsed.data
-    this.sourcemaps.upload({ apikey, release, url, mapJson: map, uploadedAt: Date.now() })
+    const { release, url, map } = parsed.data
+    this.sourcemaps.upload({
+      apikey: req.apikey,
+      release,
+      url,
+      mapJson: map,
+      uploadedAt: Date.now(),
+    })
     return { ok: true, stored: this.sourcemaps.count() }
   }
 
   /** GET /api/performance?metric=largest-contentful-paint&sinceMinutes=1440 */
   @Get('performance')
   performance(
+    @Req() req: AuthedRequest,
     @Query('metric') metric = 'largest-contentful-paint',
     @Query('sinceMinutes') sinceMinutes?: string
   ) {
-    return this.storage.performanceQuantiles(metric, parseSince(sinceMinutes, 24 * 60))
+    return this.storage.performanceQuantiles(req.apikey, metric, parseSince(sinceMinutes, 24 * 60))
   }
 }
 
 function parseSince(sinceMinutes: string | undefined, defaultMinutes: number): number {
   const n = Number(sinceMinutes)
-  return (Number.isFinite(n) && n > 0 ? n : defaultMinutes) * 60_000
+  // 上界 10 年：极端值会让 Date 越界成 Invalid Date（.toISOString 抛 RangeError → 500）
+  return (Number.isFinite(n) && n > 0 ? Math.min(n, 10 * 365 * 24 * 60) : defaultMinutes) * 60_000
 }
 
 function clamp(n: number, min: number, max: number): number {

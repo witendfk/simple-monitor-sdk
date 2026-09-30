@@ -38,7 +38,9 @@ export function OverviewView({ refreshKey }: { refreshKey: number }) {
         data: top.map((t) => `${t.type}: ${t.message.slice(0, 24)}`).reverse(),
         axisLabel: { width: 110, overflow: 'truncate' },
       },
-      series: [{ type: 'bar', data: top.map((t) => t.count).reverse(), itemStyle: { color: '#c0392b' } }],
+      series: [
+        { type: 'bar', data: top.map((t) => t.count).reverse(), itemStyle: { color: '#c0392b' } },
+      ],
       tooltip: { trigger: 'axis' as const },
     }
   }, [data])

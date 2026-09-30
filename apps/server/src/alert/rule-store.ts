@@ -37,8 +37,9 @@ export class AlertRuleStore {
     if (this.fires.length > MAX_FIRES) this.fires.length = MAX_FIRES
   }
 
-  listFires(limit = 50): AlertFire[] {
-    return this.fires.slice(0, limit)
+  listFires(apikey?: string, limit = 50): AlertFire[] {
+    const scoped = apikey ? this.fires.filter((f) => f.apikey === apikey) : this.fires
+    return scoped.slice(0, limit)
   }
 
   /** 供测试与重置 */

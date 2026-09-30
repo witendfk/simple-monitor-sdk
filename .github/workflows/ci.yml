@@ -7,7 +7,8 @@ on:
     branches: [master]
 
 # 质量门：typecheck / lint / build / test。
-# lint：error 必须为 0；warning 用 --max-warnings=176 锁存量（M2 时点），只减不增，归零后移除上限。
+# lint：error 必须为 0；warning 用 --max-warnings=182 锁存量（2026-09-30 审查后纳入 tsx 时点），
+# 只减不增，归零后移除上限。typecheck 分三段：packages（根 tsconfig）/ server / dashboard。
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -22,9 +23,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm --filter @simple-monitor/server typecheck
+      - run: pnpm --filter @simple-monitor/dashboard typecheck
       - run: pnpm lint:ci
       - run: pnpm build
-      - run: pnpm --filter @simple-monitor/server typecheck
       - run: pnpm test
 
   # ADR-6：自研 web-vitals vs 官方库 oracle 一致性（真实 chromium 双跑）
