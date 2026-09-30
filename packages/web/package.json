@@ -10,6 +10,16 @@
       "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.mts",
+      "import": "./dist/react.mjs",
+      "require": "./dist/react.js"
+    },
+    "./vue": {
+      "types": "./dist/vue.d.mts",
+      "import": "./dist/vue.mjs",
+      "require": "./dist/vue.js"
     }
   },
   "files": [
@@ -26,8 +36,6 @@
     "@simple-monitor/utils": "workspace:*",
     "@simple-monitor/browser": "workspace:*",
     "@simple-monitor/core": "workspace:*",
-    "@simple-monitor/react": "workspace:*",
-    "@simple-monitor/vue": "workspace:*",
     "@simple-monitor/web-performance": "workspace:*"
   },
   "keywords": [
@@ -39,5 +47,17 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/witendfk/simple-monitor-sdk.git"
+  },
+  "peerDependencies": {
+    "@simple-monitor/react": "*",
+    "@simple-monitor/vue": "*"
+  },
+  "peerDependenciesMeta": {
+    "@simple-monitor/react": {
+      "optional": true
+    },
+    "@simple-monitor/vue": {
+      "optional": true
+    }
   }
 }

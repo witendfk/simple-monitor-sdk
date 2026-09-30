@@ -48,6 +48,24 @@ npm i @simple-monitor/web                  # 干净项目安装
 # 15 分钟接入验证：按文档站快速开始跑通 init({dsn, apikey})
 ```
 
+## 附：本地产物验证（不发布也能验证）
+
+```bash
+pnpm build && pnpm pack:all    # 产物统一输出到 release/*.tgz（自动清旧）
+# 任意空目录里装本地产物（等价于真实发布物）：
+npm i /path/to/sdk/release/simple-monitor-web-0.1.0.tgz \
+      /path/to/sdk/release/simple-monitor-core-0.1.0.tgz \
+      ...（其余依赖包一并列出）
+```
+
+框架适配走子路径导入（主入口零框架依赖）：
+
+```ts
+import { init } from '@simple-monitor/web'
+import { MonitorVue } from '@simple-monitor/web/vue'      // Vue 项目
+import { ErrorBoundary } from '@simple-monitor/web/react' // React 项目
+```
+
 ## 五、当前状态（发布管线已验证到「只剩登录」）
 
 - [x] changesets 配置：`access: public`（scoped 包必须）/ `baseBranch: master`

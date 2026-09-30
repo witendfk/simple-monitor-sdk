@@ -19,10 +19,11 @@ import { WebVitals } from '@simple-monitor/web-performance'
 
 // 转出手动 API 与类型
 export { log } from '@simple-monitor/browser'
-// 框架专属 API（API 导出模式）：业务方 import 后接入框架，init 无法代劳
-export { MonitorVue } from '@simple-monitor/vue'
-export { ErrorBoundary, errorBoundaryReport } from '@simple-monitor/react'
 export type { InitOptions } from '@simple-monitor/types'
+
+// 框架适配已拆子路径（主入口零框架依赖，按需引入）：
+//   import { MonitorVue } from '@simple-monitor/web/vue'
+//   import { ErrorBoundary } from '@simple-monitor/web/react'
 
 const _global = getGlobal<any>()
 
@@ -94,11 +95,18 @@ export function init(options: InitOptions = {}): boolean {
   }
 
   const client = getDefaultMonitorClient()
+  // SSR/Node 环境：只绑定配置（log 等手动 API 可用），不装载浏览器采集器与性能引擎
+  if (typeof window === 'undefined') {
+    if (!client.init(options)) return false
+    logger.warn('SSR/Node 环境检测到 window：仅绑定配置，浏览器采集已跳过')
+    _global[INIT_FLAG] = true
+    return true
+  }
   if (!initBrowser(options, client)) return false
 
   // 性能采集（配置驱动，默认开；performance:false 关闭）
   if (options.performance !== false) {
-    if (typeof window !== 'undefined') {
+    {
       new WebVitals({
         immediately: false,
         eventSource: createEventSourceFromClient(),

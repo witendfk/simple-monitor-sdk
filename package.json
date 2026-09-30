@@ -28,7 +28,8 @@
     "test:conformance": "vitest run test/oracle/conformance.spec.ts",
     "demo:full": "pnpm --filter @simple-monitor/server dev & sleep 2 && pnpm demo",
     "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs"
+    "docs:build": "vitepress build docs",
+    "pack:all": "node scripts/pack-all.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1",

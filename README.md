@@ -69,7 +69,8 @@ new WebVitals({
 ### 框架错误捕获
 
 ```ts
-import { MonitorVue, ErrorBoundary } from '@simple-monitor/web'
+import { MonitorVue } from '@simple-monitor/web/vue'
+import { ErrorBoundary } from '@simple-monitor/web/react'
 
 // Vue（Vue3 / Vue2 通用）
 app.use(MonitorVue)

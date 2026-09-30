@@ -45,6 +45,11 @@ export function init(
   options: InitOptions = {},
   client: MonitorClient = getDefaultMonitorClient()
 ): boolean {
+  // 非浏览器环境（SSR/Node）：无 window 可挂载，明确拒绝而非装载后崩溃
+  if (typeof window === 'undefined') {
+    logger.warn('browser SDK 仅支持浏览器环境（未检测到 window），init 已跳过')
+    return false
+  }
   if (instrumentedClient) {
     if (instrumentedClient !== client) {
       logger.warn(

@@ -23,12 +23,12 @@ init({
 ## 框架适配
 
 ```ts
-// Vue
-import { MonitorVue } from '@simple-monitor/web'
+// Vue（子路径导入，主入口零框架依赖）
+import { MonitorVue } from '@simple-monitor/web/vue'
 app.use(MonitorVue)
 
 // React
-import { ErrorBoundary } from '@simple-monitor/web'
+import { ErrorBoundary } from '@simple-monitor/web/react'
 <ErrorBoundary fallback={<div>出错了</div>}><App /></ErrorBoundary>
 ```
 
