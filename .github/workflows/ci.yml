@@ -23,10 +23,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm --filter @simple-monitor/server typecheck
       - run: pnpm --filter @simple-monitor/dashboard typecheck
       - run: pnpm lint:ci
       - run: pnpm build
+      # server typecheck 消费 protocol 的构建产物（.d.ts 经 node_modules 链接解析；
+      # server tsconfig 无 paths 源码映射，rootDir 限定 apps/server）——顺序不可前移，
+      # 2874b50 曾因前移在 CI 无 dist 环境断裂（本地有 dist 掩盖，本地绿 ≠ CI 绿）
+      - run: pnpm --filter @simple-monitor/server typecheck
       - run: pnpm test
 
   # ADR-6：自研 web-vitals vs 官方库 oracle 一致性（真实 chromium 双跑）
