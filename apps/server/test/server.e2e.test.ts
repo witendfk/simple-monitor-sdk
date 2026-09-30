@@ -113,6 +113,36 @@ describe('server e2e（内存全链路）', () => {
     expect(perf.body.p75).toBe(2100)
   })
 
+  it('gzip 信封（SDK >1KB 走 CompressionStream）→ 解压后 204（demo-app 富信封链路暴露的缺口回归）', async () => {
+    const { gzipSync } = await import('node:zlib')
+    const env = envelopeFixture()
+    // 补堆栈与面包屑使信封超过 gzip 阈值（>1KB）
+    env.events.push({
+      kind: 'error',
+      error: {
+        type: 'JAVASCRIPT_ERROR',
+        message: 'TypeError: amount.toFixed is not a function',
+        stackFrames: Array.from({ length: 8 }, (_, i) => ({
+          url: 'http://x.com/app.js',
+          func: `frame${i}`,
+          line: i + 1,
+          column: i + 3,
+        })),
+      },
+      breadcrumbs: [
+        { type: 'route', data: { from: '#/', to: '#/orders' } },
+        { type: 'xhr', data: { url: '/api/orders' } },
+      ],
+    })
+    const gz = gzipSync(Buffer.from(JSON.stringify(env)))
+    const res = await request(server)
+      .post('/report/batch')
+      .set('Content-Type', 'application/gzip')
+      .set('Content-Encoding', 'gzip')
+      .send(gz)
+    expect(res.status).toBe(204)
+  })
+
   it('/api/** 无鉴权头 → 401（查询端点不再匿名可读）', async () => {
     const res = await request(server).get('/api/overview')
     expect(res.status).toBe(401)

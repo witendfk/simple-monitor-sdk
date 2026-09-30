@@ -79,7 +79,6 @@ coverage/
 
 # 本地打包产物（pnpm pack:all 输出）
 /release/
-examples/verify/package-lock.json
 
 # tsup dts 产物误落在 src（protocol）
 packages/protocol/src/*.d.ts

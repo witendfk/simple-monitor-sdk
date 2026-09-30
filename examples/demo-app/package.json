@@ -1,0 +1,10 @@
+{
+  "name": "simple-monitor-demo-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SDK 接入演示应用（订单管理台）：真实业务形态的接入示例，demo:full 链路入口",
+  "scripts": {
+    "dev": "vite"
+  }
+}

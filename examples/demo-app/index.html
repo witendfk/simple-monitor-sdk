@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Acme Orders — Simple Monitor 接入示例</title>
+    <link rel="stylesheet" href="./src/app.css" />
+  </head>
+  <body>
+    <svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+      <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-6 4 3 5-8"/></symbol>
+    </svg>
+
+    <aside class="side">
+      <div class="brand">
+        <div class="brand-logo"><svg><use href="#i-grid" /></svg></div>
+        <div>
+          <div class="brand-name">Acme Orders</div>
+          <div class="brand-sub">Order Console</div>
+        </div>
+      </div>
+      <nav>
+        <a class="nav-item active" href="#"><svg><use href="#i-grid" /></svg>订单</a>
+        <a class="nav-item" href="#" title="演示应用仅实现订单页"><svg><use href="#i-user" /></svg>客户</a>
+        <a class="nav-item" href="#" title="演示应用仅实现订单页"><svg><use href="#i-chart" /></svg>报表</a>
+      </nav>
+      <div class="side-foot">接入自 @simple-monitor/web</div>
+    </aside>
+
+    <main class="main">
+      <div class="content">
+        <!-- 列表视图 -->
+        <div id="view-list">
+          <img class="banner" src="/img/product-banner.svg" alt="Acme Order Console" />
+          <div class="page-head">
+            <div>
+              <h1>订单管理</h1>
+              <div class="desc">订单、支付与客户 · 数据实时更新</div>
+            </div>
+            <div class="right">
+              <span class="fault">故障注入 <span class="switch" id="fault-switch"></span></span>
+            </div>
+          </div>
+
+          <div class="cards">
+            <div class="card metric">
+              <div class="label">今日订单</div>
+              <div class="value" id="stat-orders">—</div>
+              <div class="desc">含全部状态</div>
+            </div>
+            <div class="card metric">
+              <div class="label">营收（已支付）</div>
+              <div class="value" id="stat-revenue">—</div>
+              <div class="desc">本页列表求和</div>
+            </div>
+            <div class="card metric">
+              <div class="label">待支付</div>
+              <div class="value" id="stat-pending">—</div>
+              <div class="desc">等待用户操作</div>
+            </div>
+            <div class="card metric">
+              <div class="label">支付失败率</div>
+              <div class="value" id="stat-fail">—</div>
+              <div class="desc" id="stat-fail-desc">本会话尝试</div>
+            </div>
+          </div>
+
+          <div class="panel-table">
+            <div class="toolbar">
+              <input class="search" id="search" placeholder="搜索订单号 / 商品…" />
+              <button class="btn-primary" id="btn-new" type="button">＋ 新建订单</button>
+            </div>
+            <table>
+              <thead>
+                <tr><th>订单号</th><th>商品</th><th class="num">金额</th><th>状态</th><th>操作</th></tr>
+              </thead>
+              <tbody id="order-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 详情视图（hash 路由 #/order/:id） -->
+        <div id="view-detail" hidden>
+          <a class="back" href="#/">‹ 返回订单列表</a>
+          <div class="page-head">
+            <div><h1 id="detail-title" class="mono">—</h1></div>
+          </div>
+          <div class="card" id="detail-body" style="padding: 6px 20px"></div>
+        </div>
+
+        <p class="note">
+          <b>SDK 接入说明</b>（页面底部常驻）—— 本应用通过 <code>@simple-monitor/web</code>
+          接入监控，入口仅一处 <code>src/integrate.ts</code>：init({ dsn, apikey, release })。
+          页面里的每次操作（下单 / 支付 / 路由切换）都会被采集；右上角开启「故障注入」后，
+          支付 500、列表脏数据渲染异常、横幅图 404 作为真实故障进入监控管道，在服务端终端与看板可见。
+        </p>
+      </div>
+    </main>
+
+    <!-- 新建订单 -->
+    <div class="modal-mask" id="modal">
+      <div class="modal">
+        <h3>新建订单</h3>
+        <form id="order-form">
+          <label for="f-item">商品名称</label>
+          <input id="f-item" name="item" placeholder="如：企业版许可证 ×1" required />
+          <label for="f-amount">金额（元）</label>
+          <input id="f-amount" name="amount" type="number" min="1" step="0.01" placeholder="如：3980" required />
+          <div class="row-end">
+            <button class="btn-ghost" type="button" id="modal-close">取消</button>
+            <button class="btn-primary" type="submit">创建订单</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

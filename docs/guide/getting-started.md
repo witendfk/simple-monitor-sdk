@@ -35,6 +35,10 @@ import { ErrorBoundary } from '@simple-monitor/web/react'
 ## 本地演示（30 秒完整链路）
 
 ```bash
-pnpm demo:full      # 起服务端(:3000) + demo 页(:5180)
+pnpm demo:full      # 起服务端(:3000) + 订单管理台演示页(:5180)
 # 打开 http://localhost:5190 看板查看数据
 ```
+
+演示页是一个真实业务形态的订单管理台（`examples/demo-app`）：右上角开启「故障注入」后，
+支付 500 / 列表脏数据异常 / 横幅图 404 作为真实故障被采集——回到看板即可看到错误趋势尖峰
+与详情页的符号化堆栈 + 面包屑时间线。
