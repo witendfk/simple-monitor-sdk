@@ -48,16 +48,8 @@
     "type": "git",
     "url": "git+https://github.com/witendfk/simple-monitor-sdk.git"
   },
-  "peerDependencies": {
-    "@simple-monitor/react": "*",
-    "@simple-monitor/vue": "*"
-  },
-  "peerDependenciesMeta": {
-    "@simple-monitor/react": {
-      "optional": true
-    },
-    "@simple-monitor/vue": {
-      "optional": true
-    }
+  "devDependencies": {
+    "@simple-monitor/react": "workspace:*",
+    "@simple-monitor/vue": "workspace:*"
   }
 }
