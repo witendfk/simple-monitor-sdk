@@ -69,6 +69,8 @@ export const ErrorPayloadSchema = z.object({
   errorId: z.number().optional(),
   componentName: z.string().optional(),
   customTag: z.string().optional(),
+  /** 资源子类（仅 resource 类非空，9 分类分组用） */
+  resourceKind: z.enum(['script', 'image', 'css', 'media', 'other']).optional(),
   /** SPA 路由视图标识（采集时刻打标，M3）：错误可归因到具体路由页 */
   viewId: z.string().optional(),
   http: HttpPayloadSchema.optional(),
@@ -129,6 +131,11 @@ export const BehaviorPayloadSchema = z.discriminatedUnion('behaviorType', [
     /** getRealPath 归一后的页面路径 */
     url: z.string(),
     loadType: z.enum(['navigate', 'reload', 'back_forward']).optional(),
+    /** 来源归因（M8 visits 前置）：referrer 主机与 UTM 参数 */
+    referrerHost: z.string().max(128).optional(),
+    utmSource: z.string().max(128).optional(),
+    utmMedium: z.string().max(128).optional(),
+    utmCampaign: z.string().max(128).optional(),
   }),
   z.object({
     behaviorType: z.literal('page_dwell'),

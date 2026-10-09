@@ -44,10 +44,38 @@ function loadType(): 'navigate' | 'reload' | 'back_forward' {
   return 'navigate'
 }
 
+/** 来源归因（M8 visits 前置）：referrer 主机 + UTM 参数（仅首次加载 PV 携带） */
+function attribution(): {
+  referrerHost?: string
+  utmSource?: string
+  utmMedium?: string
+  utmCampaign?: string
+} {
+  const out: ReturnType<typeof attribution> = {}
+  try {
+    const ref = document.referrer
+    if (ref) {
+      const host = new URL(ref).hostname
+      if (host && host !== location.hostname) out.referrerHost = host.slice(0, 128)
+    }
+    const q = new URLSearchParams(location.search)
+    const us = q.get('utm_source')
+    const um = q.get('utm_medium')
+    const uc = q.get('utm_campaign')
+    if (us) out.utmSource = us.slice(0, 128)
+    if (um) out.utmMedium = um.slice(0, 128)
+    if (uc) out.utmCampaign = uc.slice(0, 128)
+  } catch {
+    /* 解析失败不阻塞 PV */
+  }
+  return out
+}
+
 /** PV（首次加载由 setupBehaviors 调；路由变化由 handleHistoryEvent 调） */
 export function trackPageView(
   client: MonitorClient,
-  forcedLoadType?: 'navigate' | 'reload' | 'back_forward'
+  forcedLoadType?: 'navigate' | 'reload' | 'back_forward',
+  isFirstLoad = false
 ): void {
   const url = pageUrl()
   // 同 URL 连续 PV 合并（防 replaceState 刷 URL 重复上报——ADR-8 增补 1）
@@ -57,6 +85,8 @@ export function trackPageView(
     behaviorType: 'page_view',
     url,
     loadType: forcedLoadType,
+    // 来源归因仅在首次加载 PV 携带（SPA 内部路由不改变来源）
+    ...(isFirstLoad ? attribution() : {}),
   })
 }
 
@@ -218,7 +248,7 @@ function setupWhiteScreen(client: MonitorClient): void {
 export function setupBehaviors(client: MonitorClient): void {
   if (initialized || typeof window === 'undefined' || typeof document === 'undefined') return
   initialized = true
-  trackPageView(client, loadType())
+  trackPageView(client, loadType(), true)
   setupDwell(client)
   setupDeclarative(client)
   setupWhiteScreen(client)

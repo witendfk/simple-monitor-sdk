@@ -126,6 +126,8 @@ export function toErrorEvent(data: ReportDataType, breadcrumbs?: BreadcrumbPushD
       stackFrames: toStackFrames(data.stack),
       errorId: typeof data.errorId === 'number' ? data.errorId : undefined,
       componentName: data.componentName ? String(data.componentName) : undefined,
+      resourceKind: (data as { resourceKind?: 'script' | 'image' | 'css' | 'media' | 'other' })
+        .resourceKind,
       customTag: data.customTag ? String(data.customTag) : undefined,
       viewId: data.viewId ? String(data.viewId) : undefined,
       http: http

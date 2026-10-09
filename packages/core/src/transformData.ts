@@ -138,6 +138,31 @@ export function resourceTransform(target: ResourceErrorTarget): ReportDataType {
     level: Severity.Low,
     time: getTimestamp(),
     name: `${resourceMap[target.localName || ''] || target.localName}加载失败`,
+    // 资源子类（9 分类前置，总纲 §3.7）：script/image/css/media → 服务端按 kind 分组
+    resourceKind: classifyResourceKind(target.localName),
+  } as ReportDataType
+}
+
+/** localName → 资源子类（对齐 CH error_events.resource_kind 枚举） */
+function classifyResourceKind(localName?: string): 'script' | 'image' | 'css' | 'media' | 'other' {
+  switch ((localName || '').toLowerCase()) {
+    case 'script':
+      return 'script'
+    case 'img':
+    case 'image':
+    case 'picture':
+      return 'image'
+    case 'css':
+    case 'link':
+    case 'style':
+      return 'css'
+    case 'audio':
+    case 'video':
+    case 'source':
+    case 'track':
+      return 'media'
+    default:
+      return 'other'
   }
 }
 
