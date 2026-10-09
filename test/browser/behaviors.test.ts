@@ -17,7 +17,7 @@ const baseOptions = { dsn, apikey: 'k' }
 const client = new MonitorClient()
 vi.spyOn(client.transport, 'send').mockResolvedValue(undefined)
 // fetch 先 stub 后 init（包装绑定该引用）
-;(window as any).fetch = vi
+;(window as unknown as { fetch: unknown }).fetch = vi
   .fn()
   .mockImplementation(() => Promise.resolve(new Response(null, { status: 204 })))
 initBrowser(baseOptions, client)
