@@ -17,6 +17,10 @@ export class Options {
   maxDuplicateCount: number = 2
   /** 性能数据采样率 0~1（默认 1 不采样；错误始终 100% 上报，总纲 §五规格 2） */
   sampleRate: number = 1
+  /** 行为域采样率（默认 1） */
+  trackSampleRate: number = 1
+  /** 成功请求明细采样率（默认 0.1） */
+  apiSampleRate: number = 0.1
   disabled: boolean = false
   onRouteChange?: InitOptions['onRouteChange']
 
@@ -29,6 +33,8 @@ export class Options {
       includeHttpUrlTraceIdRegExp,
       maxDuplicateCount,
       sampleRate,
+      trackSampleRate,
+      apiSampleRate,
       disabled,
       onRouteChange,
     } = options
@@ -48,6 +54,12 @@ export class Options {
       const r = Number(sampleRate)
       // 越界值收敛到 [0,1]
       this.sampleRate = Math.min(1, Math.max(0, r))
+    }
+    if (validateOption(trackSampleRate, 'trackSampleRate', 'number')) {
+      this.trackSampleRate = Math.min(1, Math.max(0, Number(trackSampleRate) || 0))
+    }
+    if (validateOption(apiSampleRate, 'apiSampleRate', 'number')) {
+      this.apiSampleRate = Math.min(1, Math.max(0, Number(apiSampleRate) || 0))
     }
     validateOption(disabled, 'disabled', 'boolean') && (this.disabled = !!disabled)
     validateOption(onRouteChange, 'onRouteChange', 'function') &&

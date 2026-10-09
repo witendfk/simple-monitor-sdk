@@ -26,6 +26,10 @@ export interface InitOptions
   env?: string
   /** 性能数据采样率 0~1（默认 1；错误始终 100% 上报） */
   sampleRate?: number
+  /** 行为域采样率（PV/停留/曝光/埋点），默认 1（错误不受影响）——M7 ADR-8 */
+  trackSampleRate?: number
+  /** 成功请求明细（kind api）采样率，默认 0.1（体量大头）——M7 ADR-8 */
+  apiSampleRate?: number
   /** 性能采集开关（默认开，false 关闭 web-performance 采集） */
   performance?: boolean
   /** 慢资源判定阈值 ms（默认 300），透传给 web-performance RT */

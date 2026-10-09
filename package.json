@@ -23,7 +23,7 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm build && pnpm -r --filter \"./packages/*\" publish --access public --no-git-checks",
-    "lint:ci": "eslint . --ext .ts,.tsx --max-warnings 171",
+    "lint:ci": "eslint . --ext .ts,.tsx --max-warnings 167",
     "test:conformance": "vitest run test/oracle/conformance.spec.ts",
     "demo:full": "pnpm --filter @simple-monitor/server dev & sleep 2 && pnpm demo",
     "docs:dev": "vitepress dev docs",

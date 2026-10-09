@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- 测试构造协议信封的脏数据场景豁免 */
 import { describe, it, expect } from 'vitest'
 import {
   PROTOCOL_VERSION,
@@ -168,5 +169,89 @@ describe('protocol v1（M0 契约）', () => {
     expect(isErrorEvent(e1)).toBe(true)
     expect(isPerfEvent(e2)).toBe(true)
     expect(isErrorEvent(e2)).toBe(false)
+  })
+})
+
+describe('protocol v1.1 行为域（M7 ADR-8 加性扩展）', () => {
+  const base = () => ({
+    protocolVersion: PROTOCOL_VERSION,
+    sentAt: Date.now(),
+    auth: { apiKey: 'k', sdk: { name: 'web', version: '0.0.1' } },
+    session: { sessionId: 's', trackerId: 't' },
+    context: { page: 'http://x/orders' },
+  })
+
+  it('kind behavior：四类 behaviorType 全部通过', () => {
+    const envelope = {
+      ...base(),
+      events: [
+        {
+          kind: 'behavior',
+          behavior: { behaviorType: 'page_view', url: '/orders', loadType: 'navigate' },
+        },
+        {
+          kind: 'behavior',
+          behavior: { behaviorType: 'page_dwell', activeMs: 5200, startTime: 1, endTime: 5201 },
+        },
+        {
+          kind: 'behavior',
+          behavior: {
+            behaviorType: 'expose',
+            name: 'pay-btn',
+            selector: '[data-expose="pay-btn"]',
+            dwellMs: 500,
+          },
+        },
+        {
+          kind: 'behavior',
+          behavior: {
+            behaviorType: 'track',
+            name: 'pay_click',
+            from: 'declarative',
+            props: { amount: 100 },
+          },
+        },
+      ],
+    }
+    const r = validateEnvelope(envelope)
+    expect(r.success).toBe(true)
+    expect(r.success && r.data.events).toHaveLength(4)
+  })
+
+  it('kind api：成功请求明细通过；behavior 名超长被拒（LIMITS）', () => {
+    expect(
+      validateEnvelope({
+        ...base(),
+        events: [
+          {
+            kind: 'api',
+            api: { method: 'POST', url: '/api/orders', status: 201, durationMs: 45, slow: false },
+          },
+        ],
+      }).success
+    ).toBe(true)
+    expect(
+      validateEnvelope({
+        ...base(),
+        events: [
+          {
+            kind: 'behavior',
+            behavior: { behaviorType: 'track', name: 'x'.repeat(200), from: 'api' },
+          },
+        ],
+      }).success
+    ).toBe(false)
+  })
+
+  it('behavior track props 键数超限被拒（LIMITS.trackPropsKeys）', () => {
+    const props = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`k${i}`, i]))
+    expect(
+      validateEnvelope({
+        ...base(),
+        events: [
+          { kind: 'behavior', behavior: { behaviorType: 'track', name: 'x', from: 'api', props } },
+        ],
+      }).success
+    ).toBe(false)
   })
 })

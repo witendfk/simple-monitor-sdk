@@ -16,6 +16,7 @@ import { SilentFlags } from './flags'
 import { Breadcrumb } from './breadcrumb'
 import { Options } from './options'
 import { TransportData } from './transportData'
+import { BehaviorTracker, sanitizeTrackPayload } from './behavior'
 import { SessionManager } from './session'
 import { logToClient } from './external'
 import { logger, setPrivacyMaskEnabled } from '@simple-monitor/utils'
@@ -38,6 +39,8 @@ export class MonitorClient {
   viewId: string = ''
   /** 上报引擎（依赖 breadcrumb/options/session 注入） */
   readonly transport: TransportData
+  /** 行为域追踪器（M7 ADR-8）：独立信封组 + 按域采样 + 防风暴 */
+  readonly behavior: BehaviorTracker
 
   /** init 是否已成功执行（幂等依据） */
   private initialized = false
@@ -49,6 +52,23 @@ export class MonitorClient {
       options: this.options,
       session: this.session,
       getViewId: () => this.viewId,
+    })
+    this.behavior = new BehaviorTracker({
+      getDsn: () => this.transport.trackDsn,
+      getContext: () => ({
+        apiKey: this.transport.apikey,
+        release: this.transport.release,
+        env: this.transport.env,
+        sdkName: 'simple-monitor',
+        sdkVersion: '0.1.0',
+        sessionId: this.session.getSessionId(),
+        trackerId: this.session.getTrackerId(),
+        page: typeof location !== 'undefined' ? location.pathname : '',
+        viewId: this.viewId,
+        deviceInfo: this.transport.deviceInfo,
+      }),
+      getTrackSampleRate: () => this.options.trackSampleRate,
+      getApiSampleRate: () => this.options.apiSampleRate,
     })
   }
 
@@ -86,6 +106,35 @@ export class MonitorClient {
     return this.transport.send(data)
   }
 
+  /**
+   * 代码埋点（M7 ADR-8）：上报一条 track 事件（kind: behavior / behaviorType: track / from: api）
+   * @param name 埋点名（≤128 字符）
+   * @param props 埋点属性（键数 ≤32、序列化 ≤2KB，超限丢弃）
+   */
+  track(name: string, props?: Record<string, unknown>): void {
+    const sanitized = sanitizeTrackPayload(name, props)
+    if (!sanitized.name) return
+    this.behavior.sendBehavior({
+      behaviorType: 'track',
+      name: sanitized.name,
+      props: sanitized.props,
+      from: 'api',
+    })
+  }
+
+  /**
+   * 代码测速（M7 ADR-8）：time(name) 返回 end 函数，调用时上报 track 事件（props.durationMs）。
+   * duration 非有限数/负数/超 24h 静默丢弃（防风暴纪律）。
+   */
+  time(name: string): () => void {
+    const start = Date.now()
+    return () => {
+      const durationMs = Date.now() - start
+      if (!Number.isFinite(durationMs) || durationMs < 0 || durationMs > 24 * 3600 * 1000) return
+      this.track(name, { durationMs })
+    }
+  }
+
   /** 设置某类事件的静默开关 */
   setSilent(type: string, silent: boolean): void {
     this.flags.set(type, silent)
@@ -114,5 +163,6 @@ export class MonitorClient {
     this.flags.clear()
     // 丢弃批量缓冲并清掉 flush 定时器：销毁后不再有任何发送行为
     this.transport.destroy()
+    this.behavior.destroy()
   }
 }

@@ -11,6 +11,7 @@
 
 import type { MonitorClient } from '@simple-monitor/core'
 import { collectDeviceInfo } from './deviceInfo'
+import { setupBehaviors } from './behaviors'
 import { currentViewId } from './viewId'
 import {
   listenError,
@@ -38,6 +39,8 @@ export function setupReplace(client: MonitorClient): void {
   // 0. 采集设备信息（一次性写入 transport，上报信封复用）；初始化路由视图标识
   client.transport.deviceInfo = collectDeviceInfo()
   client.viewId = currentViewId()
+  // 行为域采集（M7 ADR-8）：PV / 停留时长 / 曝光 / 声明式埋点 / 白屏检测
+  setupBehaviors(client)
 
   // 1. 先订阅处理器（注册回调到事件总线）
   handleError(client)

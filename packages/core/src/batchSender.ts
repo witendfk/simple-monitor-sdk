@@ -34,6 +34,8 @@ const RETRY_AFTER_CAP_MS = 10_000
 const GZIP_MIN_BYTES = 1024
 /** keepalive 载荷安全上限（浏览器硬限 64KB，留余量） */
 const KEEPALIVE_MAX_BYTES = 60_000
+/** beacon 单次上限（浏览器约 64KB，超限自动拆批——ADR-8 增补 7） */
+const BEACON_MAX_BYTES = 64 * 1024
 
 export type ChannelState = 'active' | 'leaving'
 
@@ -61,6 +63,12 @@ export class BatchSender {
 
   constructor(private readonly deps: BatchSenderDeps) {
     this.cache = deps.cache ?? new EnvelopeCache()
+    // 网络恢复即时重放离线缓存（ADR-8 增补 7：不等下次页面加载）
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        void this.replay()
+      })
+    }
   }
 
   /** 当前通道状态（测试观测用） */
@@ -173,6 +181,21 @@ export class BatchSender {
     }
   }
 
+  /** 离场拆批辅助：用已构建信封的上下文 + 事件子集重建 json */
+  private buildLeavingJson(
+    built: { dsn: string; envelope: TransportEnvelope },
+    part: Array<{ dsn: string; data: any }>
+  ): string {
+    try {
+      return JSON.stringify({
+        ...built.envelope,
+        events: built.envelope.events.slice(0, part.length),
+      })
+    } catch {
+      return JSON.stringify({ ...built.envelope, events: [] })
+    }
+  }
+
   /** 离场同步通道：beacon 逐信封发送（不缓冲不重试，浏览器保证尽力送达） */
   private flushLeaving(payloads: Array<{ dsn: string; data: any }>): void {
     if (payloads.length === 0) return
@@ -220,9 +243,24 @@ export class BatchSender {
     }
     try {
       const beacon = (globalThis as any)?.navigator?.sendBeacon
-      if (typeof beacon === 'function' && beacon.call(globalThis.navigator, url, json)) {
-        this.deps.onSendResult?.(true, built.dsn, payloads.length)
-        return
+      if (typeof beacon === 'function') {
+        // beacon 单次 ≤64KB：超限按事件拆批（ADR-8 增补 7），任一失败视为失败
+        if (json.length > BEACON_MAX_BYTES) {
+          const half = Math.max(1, Math.ceil(payloads.length / 2))
+          let allOk = true
+          for (let i = 0; i < payloads.length; i += half) {
+            const part = this.buildLeavingJson(built, payloads.slice(i, i + half))
+            if (!beacon.call(globalThis.navigator, url, part)) allOk = false
+          }
+          if (allOk) {
+            this.deps.onSendResult?.(true, built.dsn, payloads.length)
+            return
+          }
+          // 拆批仍有失败：走下方落库兜底
+        } else if (beacon.call(globalThis.navigator, url, json)) {
+          this.deps.onSendResult?.(true, built.dsn, payloads.length)
+          return
+        }
       }
     } catch (error) {
       logger.error('sendBeacon error:', error)

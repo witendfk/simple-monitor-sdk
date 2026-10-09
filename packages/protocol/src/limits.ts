@@ -24,4 +24,15 @@ export const LIMITS = {
   maxMetricsPerEvent: 200,
   /** 单信封事件数上限 */
   maxEventsPerEnvelope: 100,
+  /* ---- 行为域 v1.1（ADR-8）---- */
+  /** behavior 埋点名 / 选择器长度上限 */
+  behaviorName: 128,
+  /** track props 序列化后上限（超出键数再截） */
+  trackPropsBytes: 2048,
+  /** track props 键数上限 */
+  trackPropsKeys: 32,
+  /** 单会话 behavior 事件上限（超出丢最旧，防风暴） */
+  maxBehaviorPerSession: 500,
+  /** 成功 api 事件默认采样（体量大头；0=关闭） */
+  apiSampleRate: 0.1,
 } as const

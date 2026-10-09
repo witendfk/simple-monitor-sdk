@@ -118,6 +118,57 @@ export const BreadcrumbSchema = z.object({
  * 事件判别联合
  * ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ *
+ * 行为域 v1.1（ADR-8 加性扩展：kind behavior / kind api）
+ * ------------------------------------------------------------------ */
+
+/** behavior 单事件：behaviorType 判别（总纲 §五 v1.1） */
+export const BehaviorPayloadSchema = z.discriminatedUnion('behaviorType', [
+  z.object({
+    behaviorType: z.literal('page_view'),
+    /** getRealPath 归一后的页面路径 */
+    url: z.string(),
+    loadType: z.enum(['navigate', 'reload', 'back_forward']).optional(),
+  }),
+  z.object({
+    behaviorType: z.literal('page_dwell'),
+    /** 累计可见时长 ms（不含后台时间） */
+    activeMs: z.number().int().nonnegative(),
+    startTime: z.number().int(),
+    endTime: z.number().int(),
+  }),
+  z.object({
+    behaviorType: z.literal('expose'),
+    /** 埋点名（data-expose 值） */
+    name: z.string().max(LIMITS.behaviorName),
+    /** 命中的选择器（调试归因用） */
+    selector: z.string().max(LIMITS.behaviorName).optional(),
+    /** 有效停留 ms（≥ 阈值才构成曝光） */
+    dwellMs: z.number().int().nonnegative(),
+  }),
+  z.object({
+    behaviorType: z.literal('track'),
+    name: z.string().max(LIMITS.behaviorName),
+    /** 埋点属性（键数受 LIMITS 约束；序列化体积由发送端截断） */
+    props: z
+      .record(z.string(), z.unknown())
+      .refine((p) => Object.keys(p ?? {}).length <= LIMITS.trackPropsKeys)
+      .optional(),
+    from: z.enum(['api', 'declarative']),
+  }),
+])
+
+/** api 单事件：成功请求明细（吞吐/耗时/状态码分布聚合源；4xx/5xx 仍走 error.http） */
+export const ApiPayloadSchema = z.object({
+  method: z.string(),
+  url: z.string(),
+  status: z.number().int(),
+  durationMs: z.number().nonnegative(),
+  /** 超过慢阈值标记（服务端 API 监控模块聚合用） */
+  slow: z.boolean().optional(),
+  traceId: z.string().optional(),
+})
+
 export const EventSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('error'),
@@ -128,6 +179,14 @@ export const EventSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('perf'),
     metrics: z.array(PerfMetricSchema).min(1).max(LIMITS.maxMetricsPerEvent),
+  }),
+  z.object({
+    kind: z.literal('behavior'),
+    behavior: BehaviorPayloadSchema,
+  }),
+  z.object({
+    kind: z.literal('api'),
+    api: ApiPayloadSchema,
   }),
   z.object({
     kind: z.literal('replay'),
@@ -185,6 +244,10 @@ export type MonitorEvent = z.infer<typeof EventSchema>
 export type ErrorEvent = Extract<MonitorEvent, { kind: 'error' }>
 export type PerfEvent = Extract<MonitorEvent, { kind: 'perf' }>
 export type ReplayEvent = Extract<MonitorEvent, { kind: 'replay' }>
+export type BehaviorEvent = Extract<MonitorEvent, { kind: 'behavior' }>
+export type BehaviorPayload = z.infer<typeof BehaviorPayloadSchema>
+export type ApiEvent = Extract<MonitorEvent, { kind: 'api' }>
+export type ApiPayload = z.infer<typeof ApiPayloadSchema>
 export type TransportEnvelope = z.infer<typeof TransportEnvelopeSchema>
 
 /* ------------------------------------------------------------------ *

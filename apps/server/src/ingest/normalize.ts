@@ -14,7 +14,7 @@ import { LIMITS } from '@simple-monitor/protocol'
 
 /** 落库事件（存储契约的输入形状，与 ClickHouse events 表一一对应） */
 export interface NormalizedEvent {
-  kind: 'error' | 'perf' | 'replay'
+  kind: 'error' | 'perf' | 'replay' | 'behavior' | 'api'
   type: string
   /** 客户端事件时间（协议 time / sentAt 兜底） */
   ts: Date
@@ -55,6 +55,10 @@ export interface NormalizedEvent {
   }>
   /** perf 专属 */
   perf?: Array<{ name: string; value: number; score?: number; detail?: Record<string, unknown> }>
+  /** 行为域明细（M7 kind behavior） */
+  behavior?: Record<string, unknown>
+  /** 成功请求明细（M7 kind api） */
+  api?: Record<string, unknown>
 }
 
 export interface NormalizeResult {
@@ -128,6 +132,26 @@ export function normalizeEnvelope(envelope: TransportEnvelope): NormalizeResult 
           http: event.error.http,
         },
         breadcrumbs: (event.breadcrumbs ?? []).slice(0, BREADCRUMBS_MAX),
+      })
+    } else if (event.kind === 'behavior') {
+      // 行为域（M7 ADR-8）：PV/停留/曝光/埋点 白名单入库
+      const b = event.behavior
+      events.push({
+        ...base,
+        viewId: base.viewId,
+        kind: 'behavior',
+        type: b.behaviorType,
+        ts: new Date(envelope.sentAt),
+        behavior: b as unknown as Record<string, unknown>,
+      })
+    } else if (event.kind === 'api') {
+      // 成功请求明细（M7 ADR-8 kind api）
+      events.push({
+        ...base,
+        kind: 'api',
+        type: 'api',
+        ts: new Date(envelope.sentAt),
+        api: { ...event.api } as unknown as Record<string, unknown>,
       })
     } else if (event.kind === 'perf') {
       for (const metric of event.metrics) {

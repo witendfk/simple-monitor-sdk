@@ -7,7 +7,7 @@ on:
     branches: [master]
 
 # 质量门：typecheck / lint / build / test。
-# lint：error 必须为 0；warning 用 --max-warnings=171 锁存量（2026-09-30 批次 2 后下调），
+# lint：error 必须为 0；warning 用 --max-warnings=167 锁存量（2026-09-30 M7 批次后下调），
 # 只减不增，归零后移除上限。typecheck 分三段：packages（根 tsconfig）/ server / dashboard。
 jobs:
   ci:

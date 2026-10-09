@@ -15,6 +15,7 @@ import { handleConsole } from '@simple-monitor/core'
 import type { MonitorClient } from '@simple-monitor/core'
 import type { ResourceErrorTarget, MonitorHttp } from '@simple-monitor/types'
 import { viewIdFromUrl } from './viewId'
+import { trackPageView } from './behaviors'
 
 /**
  * 订阅 JS 运行时错误（window error 事件分流后的代码错误通道）
@@ -154,6 +155,16 @@ export function handleHttp(client: MonitorClient): void {
 
     if (isError) {
       client.transport.send(parsed)
+    } else if ((data.status ?? 0) >= 200 && (data.status ?? 0) < 400) {
+      // 成功请求明细（M7 ADR-8 kind api）：独立采样（默认 0.1），供 API 监控模块聚合
+      client.behavior.sendApi({
+        method: String(data.method ?? 'GET'),
+        url: String(data.url ?? ''),
+        status: data.status ?? 0,
+        durationMs: data.elapsedTime ?? 0,
+        slow: (data.elapsedTime ?? 0) > 1000,
+        traceId: typeof data.traceId === 'string' ? data.traceId : undefined,
+      })
     }
   }
 
@@ -221,6 +232,9 @@ export function handleHistoryEvent(client: MonitorClient): void {
 
       // 更新路由视图标识：此后的错误归因到新视图（M3）
       client.viewId = viewIdFromUrl(data.to)
+
+      // 行为域 PV（M7 ADR-8）：路由变化即 PV，同 URL 合并由 trackPageView 内部处理
+      trackPageView(client)
 
       client.breadcrumb.push({
         type: BreadCrumbTypes.ROUTE,

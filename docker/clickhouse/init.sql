@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS events
 (
     ts            DateTime          COMMENT '客户端事件时间',
     apikey        LowCardinality(String),
-    kind          LowCardinality(String) COMMENT 'error | perf | replay',
+    kind          LowCardinality(String) COMMENT 'error | perf | replay | behavior | api（M7 ADR-8 加性扩展，已有部署需 ALTER MODIFY）',
     type          LowCardinality(String) COMMENT '错误类型或指标名',
     release       LowCardinality(String) COMMENT '发版标识（发版对比维度）',
     env           LowCardinality(String),
