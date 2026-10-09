@@ -53,7 +53,9 @@ export const initINP = (
     }
   }
 
-  const po = observe('event', entryHandler)
+  // durationThreshold 40（对齐官方 web-vitals）：默认 104ms 会滤掉多数交互，
+  // INP 的 P98 需要全量交互样本（§3.7）
+  const po = observe('event', entryHandler, { durationThreshold: 40 })
 
   const stopListening = (): void => {
     if (po?.takeRecords) {

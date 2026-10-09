@@ -1,4 +1,5 @@
 import { BreadcrumbPushData, IBreadcrumb } from './breadcrumb'
+import type { TransportEnvelope } from '@simple-monitor/protocol'
 import { TransportDataType } from './transportData'
 type CANCEL = null | undefined | boolean
 
@@ -55,7 +56,8 @@ export interface HooksTypes {
    * @returns {string} 返回空时不上报
    * @memberof HooksTypes
    */
-  configReportUrl?(event: TransportDataType, url: string): string
+  /** 上报 URL 钩子：实参为协议信封（M2 批量化后 TransportDataType 仅作历史兼容命名）——返回 falsy 取消发送 */
+  configReportUrl?(event: TransportEnvelope, url: string): string | false | void
 
   beforePushBreadcrumb?(
     breadcrumb: IBreadcrumb,

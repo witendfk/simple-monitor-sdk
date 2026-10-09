@@ -11,9 +11,18 @@ const MAX_EVENTS = 50_000
 @Injectable()
 export class MemoryStorage implements IEventStorage {
   private events: NormalizedEvent[] = []
+  /** 幂等去重（at-least-once 重复消费）：apikey+errorId 已入库的 error 事件跳过 */
+  private readonly seenErrorIds = new Set<string>()
 
   async saveBatch(events: NormalizedEvent[]): Promise<void> {
-    this.events.push(...events)
+    for (const e of events) {
+      if (e.kind === 'error' && e.error?.errorId !== undefined) {
+        const key = `${e.apikey}:${e.error.errorId}`
+        if (this.seenErrorIds.has(key)) continue
+        this.seenErrorIds.add(key)
+      }
+      this.events.push(e)
+    }
     if (this.events.length > MAX_EVENTS) {
       this.events = this.events.slice(this.events.length - MAX_EVENTS)
     }

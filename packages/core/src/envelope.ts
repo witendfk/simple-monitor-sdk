@@ -48,22 +48,37 @@ function toStackFrames(stack: unknown): StackFrame[] | undefined {
 }
 
 /**
- * 面包屑 data 是宿主可控内容的自由入口（路由 URL / XHR body / console 等），
- * 作为第四隐私入口在此统一兜底：序列化 → 脱敏 → 截断（LIMITS.breadcrumbData）。
+ * 面包屑 data 的结构化脱敏（第四隐私入口兜底）：
+ * 深遍历对象，**仅对字符串值**过 mask（凭证遮蔽）并截断——数值/布尔字段
+ * （时间戳、耗时、状态码）原样保留，不再被文本 mask 的数字串规则误伤
+ * （真实数据实证：13 位时间戳被打成 [card]）。
  */
-function sanitizeBreadcrumbData(data: unknown): string | undefined {
-  if (data === null || data === undefined) return undefined
-  let text: string
-  if (typeof data === 'string') {
-    text = data
-  } else {
-    try {
-      text = JSON.stringify(data)
-    } catch {
-      return '[unserializable]'
+function sanitizeBreadcrumbValue(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return undefined
+  if (typeof value === 'string') return interceptStr(mask(value), LIMITS.breadcrumbData)
+  if (typeof value === 'number' || typeof value === 'boolean') return value
+  if (depth >= 3) return interceptStr(mask(String(value)), LIMITS.breadcrumbData)
+  if (Array.isArray(value))
+    return value.slice(0, 20).map((v) => sanitizeBreadcrumbValue(v, depth + 1))
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 32)) {
+      out[k] = sanitizeBreadcrumbValue(v, depth + 1)
     }
+    return out
   }
-  return interceptStr(mask(text), LIMITS.breadcrumbData)
+  return interceptStr(mask(String(value)), LIMITS.breadcrumbData)
+}
+
+function sanitizeBreadcrumbData(data: unknown): unknown {
+  if (data === null || data === undefined) return undefined
+  if (typeof data === 'string') return interceptStr(mask(data), LIMITS.breadcrumbData)
+  if (typeof data !== 'object') return interceptStr(mask(String(data)), LIMITS.breadcrumbData)
+  try {
+    return sanitizeBreadcrumbValue(data)
+  } catch {
+    return '[unserializable]'
+  }
 }
 
 function toBreadcrumbs(stack: BreadcrumbPushData[] | undefined): Breadcrumb[] | undefined {

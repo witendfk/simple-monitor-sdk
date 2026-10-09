@@ -55,11 +55,29 @@ export function AlertsView({ refreshKey }: { refreshKey: number }) {
     }
   }
 
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+
   const toggle = async (rule: AlertRuleType): Promise<void> => {
     // 启停 = 删除 + 重建（内存存储无 update；Postgres 切片换 PUT）
-    await alertApi.remove(rule.id).catch(() => undefined)
-    const { id: _id, ...rest } = rule
-    await alertApi.create({ ...rest, enabled: !rule.enabled }).catch(() => undefined)
+    // 两步非原子：任一步失败必须上报错误并停止（不再静默吞掉导致规则凭空消失）
+    setTogglingId(rule.id)
+    try {
+      await alertApi.remove(rule.id)
+      const { id: _id, ...rest } = rule
+      try {
+        await alertApi.create({ ...rest, enabled: !rule.enabled })
+      } catch (e) {
+        // 重建失败回滚：恢复原规则，避免「规则凭空消失」
+        await alertApi.create({ ...rule }).catch(() => undefined)
+        setError(`启停失败（已回滚）：${(e as Error).message}`)
+        return
+      }
+    } catch (e) {
+      setError(`启停失败：${(e as Error).message}`)
+      return
+    } finally {
+      setTogglingId(null)
+    }
     load()
   }
 
@@ -141,7 +159,11 @@ export function AlertsView({ refreshKey }: { refreshKey: number }) {
                 <td>{r.enabled ? '✅ 启用' : '⏸ 停用'}</td>
                 <td>{r.cooldownMinutes}min</td>
                 <td>
-                  <button className="button" onClick={() => toggle(r)}>
+                  <button
+                    className="button"
+                    onClick={() => toggle(r)}
+                    disabled={togglingId === r.id}
+                  >
                     {r.enabled ? '停用' : '启用'}
                   </button>
                 </td>

@@ -30,5 +30,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/witendfk/simple-monitor-sdk.git"
+  },
+  "devDependencies": {
+    "@simple-monitor/protocol": "workspace:*"
   }
 }

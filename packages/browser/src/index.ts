@@ -24,6 +24,9 @@ export { setupReplace } from './setupReplace'
  *  - 重复 init 同一 client：幂等跳过（返回 true）；
  *  - 换 client 再 init：告警并忽略（返回 true，不影响已装的采集）。
  * 多实例监控（同页双 client）不支持——那是多实例类化的边界，如实声明而非静默错绑。
+ destroy 后同页重建 client 同样不支持：原生补丁保留旧实例闭包引用（__monitor_wrapped
+ 防重入），新实例的采集器不会装载且无告警——需要重置监控请刷新页面。真实多实例
+ （iframe/微前端各持有独立 client）不受此限。
  */
 let instrumentedClient: MonitorClient | null = null
 

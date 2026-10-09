@@ -9,7 +9,8 @@ import type { PerformanceEntryHandler } from '../types'
  */
 const observe = (
   type: string,
-  callback: PerformanceEntryHandler
+  callback: PerformanceEntryHandler,
+  options?: PerformanceObserverInit & { durationThreshold?: number }
 ): PerformanceObserver | undefined => {
   if (PerformanceObserver.supportedEntryTypes?.includes(type)) {
     const po = new PerformanceObserver((list) => {
@@ -21,7 +22,9 @@ const observe = (
         }
       })
     })
-    po.observe({ type, buffered: true })
+    po.observe({ buffered: true, ...options, type } as PerformanceObserverInit & {
+      durationThreshold?: number
+    })
     return po
   }
 }

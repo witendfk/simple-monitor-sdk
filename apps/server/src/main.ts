@@ -57,6 +57,8 @@ async function bootstrap(): Promise<void> {
 
   // beacon 兼容：一切 Content-Type 都按 JSON 解析（解析失败由协议校验层拒绝）
   app.use(gunzipBody)
+  // sourcemap 工件（真实项目 map 常为 MB 级）单独放开上限；其余路由维持 256kb
+  app.use('/api/sourcemaps', express.json({ type: () => true, limit: '20mb' }))
   app.use(express.json({ type: () => true, limit: '256kb' }))
   app.enableCors({ origin: true, credentials: true })
   app.enableShutdownHooks()

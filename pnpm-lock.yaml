@@ -201,7 +201,11 @@ importers:
         specifier: workspace:*
         version: link:../types
 
-  packages/types: {}
+  packages/types:
+    devDependencies:
+      '@simple-monitor/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/utils:
     dependencies:

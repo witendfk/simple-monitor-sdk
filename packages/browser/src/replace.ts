@@ -197,6 +197,15 @@ export function fetchReplace(client: MonitorClient): void {
         const url = resolveFetchUrl(input)
         const sTime = getTimestamp()
         const method = resolveFetchMethod(input, init)
+        // 防自循环：SDK 自身上报（BatchSender 主动期走 fetch）不再采集——
+        // 与 xhr 通道的 isSdkUrl 语义对齐（§3.7：上报请求混入面包屑 + dsn
+        // 不可用时的自反馈放大）
+        if (client.transport.isSdkTransportUrl(url)) {
+          return (originalFetch as (...a: unknown[]) => Promise<Response>).apply(window, [
+            input,
+            init,
+          ])
+        }
 
         // 追踪头注入（ADR-7）：复制请求头后写入，保持业务原 init 不被修改
         let traceId: string | undefined
@@ -366,7 +375,10 @@ export function historyReplace(client: MonitorClient): void {
 
   on(window, 'hashchange', (e) => {
     const ev = e as HashChangeEvent
-    triggerRoute(client, ev.newURL, ev.oldURL)
+    // 不传 from：与 pushState/popstate 统一走 lastHref 去重——修复
+    // 「pushState(#/b) 已触发 HISTORY 且 lastHref 已更新，随后的 hashchange
+    // 再以 oldURL 触发一次」的双面包屑（vue-router hash 模式必现，§3.7）
+    triggerRoute(client, ev.newURL)
   })
   on(window, 'popstate', () => {
     triggerRoute(client, getLocationHref())

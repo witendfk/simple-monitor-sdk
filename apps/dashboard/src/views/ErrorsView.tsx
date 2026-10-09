@@ -9,14 +9,32 @@ export function ErrorsView({ onOpen }: { onOpen: (fingerprint: string) => void }
   const [release, setRelease] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(() => {
-    api
-      .errors(50, release || undefined)
-      .then(setGroups)
-      .catch((e: Error) => setError(e.message))
-  }, [release])
+  // 竞态防护：release 快速输入时旧响应不得覆盖新响应（对齐 OverviewView 样板）+ 300ms 防抖
+  const load = useCallback(
+    (signal?: { cancelled: boolean }) => {
+      api
+        .errors(50, release || undefined)
+        .then((d) => {
+          if (!signal?.cancelled) {
+            setGroups(d)
+            setError(null)
+          }
+        })
+        .catch((e: Error) => {
+          if (!signal?.cancelled) setError(e.message)
+        })
+    },
+    [release]
+  )
 
-  useEffect(load, [load])
+  useEffect(() => {
+    const signal = { cancelled: false }
+    const timer = setTimeout(() => load(signal), 300)
+    return () => {
+      signal.cancelled = true
+      clearTimeout(timer)
+    }
+  }, [load])
 
   return (
     <section>
@@ -27,7 +45,7 @@ export function ErrorsView({ onOpen }: { onOpen: (fingerprint: string) => void }
           value={release}
           onChange={(e) => setRelease(e.target.value)}
         />
-        <button className="button" onClick={load}>
+        <button className="button" onClick={() => load()}>
           刷新
         </button>
       </div>

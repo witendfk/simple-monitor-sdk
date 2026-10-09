@@ -100,7 +100,7 @@ export class TransportData implements ITransportData {
       beforeSend: (envelope, dsn) => {
         if (typeof this.configReportUrl !== 'function') return dsn
         try {
-          const custom = this.configReportUrl(envelope as unknown as TransportDataType, dsn)
+          const custom = this.configReportUrl(envelope, dsn)
           return custom || false
         } catch (error) {
           logger.error('configReportUrl hook error:', error)

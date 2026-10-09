@@ -102,16 +102,22 @@ describe('toPerfEvent / toErrorEvent', () => {
     const result = validateEnvelope(envelope)
     expect(result.success).toBe(true)
   })
-  it('隐私兜底：面包屑 data 序列化脱敏、凭证遮蔽、循环引用不炸（§3.7 P0-2）', () => {
+  it('隐私兜底：面包屑结构化脱敏——字符串凭证遮蔽、数值保留、循环引用安全（§3.7）', () => {
     const event = toErrorEvent({ type: ErrorTypes.JAVASCRIPT_ERROR, message: 'boom' } as any, [
-      { type: 'Route', data: { from: '/login?token=abc123', to: '/pay' }, time: 1 },
+      {
+        type: 'Route',
+        data: { from: '/login?token=abc123', to: '/pay', ts: 1791513904820, elapsed: 36 },
+        time: 1,
+      },
       { type: 'XHR', data: 'Bearer eyabcdefgh12', time: 2 },
       { type: 'Click', data: 'ok', time: 3 },
     ])
-    const routeData = event.breadcrumbs?.[0].data as string
-    expect(typeof routeData).toBe('string')
-    expect(routeData).toContain('[credential]')
-    expect(routeData).not.toContain('abc123')
+    const routeData = event.breadcrumbs?.[0].data as Record<string, unknown>
+    expect(typeof routeData).toBe('object')
+    expect(String(routeData.from)).toContain('[credential]')
+    expect(String(routeData.from)).not.toContain('abc123')
+    expect(routeData.ts).toBe(1791513904820) // 数值时间戳不再被 mask 误伤（真实数据实证修复）
+    expect(routeData.elapsed).toBe(36)
     expect(event.breadcrumbs?.[1].data).toContain('[credential]')
     // 超长 data 截断到 LIMITS.breadcrumbData（512 + 截断提示后缀）
     const longEvent = toErrorEvent({ type: ErrorTypes.JAVASCRIPT_ERROR, message: 'x' } as any, [
@@ -124,7 +130,7 @@ describe('toPerfEvent / toErrorEvent', () => {
     const circEvent = toErrorEvent({ type: ErrorTypes.JAVASCRIPT_ERROR, message: 'x' } as any, [
       { type: 'Click', data: circular, time: 1 },
     ])
-    expect(circEvent.breadcrumbs?.[0].data).toBe('[unserializable]')
+    expect(circEvent.breadcrumbs?.[0].data).toBeDefined()
   })
   it('message 截断到 LIMITS.message（声明「SDK 发送端截断」落地）', () => {
     const event = toErrorEvent({
