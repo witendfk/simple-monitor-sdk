@@ -52,6 +52,18 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
     await this.client.close()
   }
 
+  async recentBehaviors(apikey: string, limit: number): Promise<Array<Record<string, unknown>>> {
+    const rs = await this.client.query({
+      query: `SELECT type, ts, sessionId, page
+              FROM events
+              WHERE apikey = {apikey:String} AND kind = 'behavior'
+              ORDER BY ts DESC LIMIT {limit:UInt32}`,
+      query_params: { apikey, limit },
+      format: 'JSONEachRow',
+    })
+    return await rs.json()
+  }
+
   async saveBatch(events: NormalizedEvent[]): Promise<void> {
     if (events.length === 0) return
     const rows: EventRow[] = []

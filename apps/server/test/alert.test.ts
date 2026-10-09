@@ -52,6 +52,7 @@ function stubStorage(errorCount: number): IEventStorage {
     errorGroups: async () => [],
     errorDetail: async () => null,
     performanceQuantiles: async () => ({ metric: 'x', count: 1, p50: 100, p75: 100, p95: 100 }),
+    recentBehaviors: async () => [],
   }
 }
 

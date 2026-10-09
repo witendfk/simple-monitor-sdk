@@ -114,6 +114,12 @@ export class QueryController {
     return { ok: true, stored: this.sourcemaps.count() }
   }
 
+  /** GET /api/behaviors?limit=20 —— 最近行为事件（M7 冒烟；M9 事件浏览器雏形） */
+  @Get('behaviors')
+  behaviors(@Req() req: AuthedRequest, @Query('limit') limit?: string) {
+    return this.storage.recentBehaviors(req.apikey, clamp(Number(limit) || 20, 1, 200))
+  }
+
   /** GET /api/performance?metric=largest-contentful-paint&sinceMinutes=1440 */
   @Get('performance')
   performance(

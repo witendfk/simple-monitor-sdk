@@ -119,6 +119,20 @@ export class MemoryStorage implements IEventStorage {
       p95: quantile(values, 0.95),
     }
   }
+
+  async recentBehaviors(apikey: string, limit: number): Promise<Array<Record<string, unknown>>> {
+    return this.events
+      .filter((e) => e.apikey === apikey && e.kind === 'behavior')
+      .slice(-limit)
+      .reverse()
+      .map((e) => ({
+        type: e.type,
+        ts: e.ts.toISOString(),
+        sessionId: e.sessionId,
+        page: e.page,
+        ...(e.behavior ?? {}),
+      }))
+  }
 }
 
 /** 最近邻分位（近似即可：演示/单测场景，CH 侧用 quantileTDigest） */

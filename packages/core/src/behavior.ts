@@ -73,22 +73,24 @@ export class BehaviorTracker {
   sendBehavior(behavior: BehaviorPayload): void {
     if (this.destroyed) return
     if (!roll(this.deps.getTrackSampleRate())) return
-    this.enqueue(behavior)
+    this.enqueue({ kind: 'behavior', behavior })
   }
 
   /** 入队一条成功请求明细（独立采样，默认 0.1） */
   sendApi(api: ApiPayload): void {
     if (this.destroyed) return
     if (!roll(this.deps.getApiSampleRate())) return
-    this.enqueue(api)
+    this.enqueue({ kind: 'api', api })
   }
 
-  private enqueue(payload: BehaviorPayload | ApiPayload): void {
+  private enqueue(
+    event: { kind: 'behavior'; behavior: BehaviorPayload } | { kind: 'api'; api: ApiPayload }
+  ): void {
     // 单会话总量防风暴（超出静默丢弃，不丢主通道数据）
     if (this.count >= LIMITS.maxBehaviorPerSession) return
     this.count += 1
     const dsn = this.deps.getDsn()
-    this.sender.add(dsn, payload as unknown as Record<string, unknown>)
+    this.sender.add(dsn, event as unknown as Record<string, unknown>)
   }
 
   /** 测试观测：当前缓冲的行为事件数 */

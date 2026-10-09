@@ -33,7 +33,7 @@
       <div class="content">
         <!-- 列表视图 -->
         <div id="view-list">
-          <img class="banner" src="/img/product-banner.svg" alt="Acme Order Console" />
+          <img class="banner" src="/img/product-banner.svg" alt="Acme Order Console" data-expose="order_banner" />
           <div class="page-head">
             <div>
               <h1>订单管理</h1>
@@ -70,7 +70,7 @@
           <div class="panel-table">
             <div class="toolbar">
               <input class="search" id="search" placeholder="搜索订单号 / 商品…" />
-              <button class="btn-primary" id="btn-new" type="button">＋ 新建订单</button>
+              <button class="btn-primary" id="btn-new" type="button" data-track="order_create_click" data-track-props='{"entry":"toolbar"}'>＋ 新建订单</button>
             </div>
             <table>
               <thead>
@@ -103,7 +103,7 @@
     <div class="modal-mask" id="modal">
       <div class="modal">
         <h3>新建订单</h3>
-        <form id="order-form">
+        <form id="order-form" data-track="order_submit">
           <label for="f-item">商品名称</label>
           <input id="f-item" name="item" placeholder="如：企业版许可证 ×1" required />
           <label for="f-amount">金额（元）</label>

@@ -54,4 +54,6 @@ export interface IEventStorage {
   errorGroups(apikey: string, limit: number, sinceMs?: number): Promise<ErrorGroup[]>
   errorDetail(apikey: string, fingerprint: string): Promise<NormalizedEvent | null>
   performanceQuantiles(apikey: string, metric: string, sinceMs: number): Promise<PerfQuantiles>
+  /** 最近行为事件（M7 通道冒烟 / M9 事件浏览器雏形） */
+  recentBehaviors(apikey: string, limit: number): Promise<Array<Record<string, unknown>>>
 }

@@ -80,9 +80,9 @@ function renderTable(): void {
 }
 
 function actions(o: Order): string {
-  const detail = `<a class="link" href="#/order/${o.id}">详情</a>`
+  const detail = `<a class="link" href="#/order/${o.id}" data-track="order_detail_view" data-track-props='{"no":"${o.no}"}'>详情</a>`
   if (o.status === 'pending') {
-    return `<a class="link act-pay" data-id="${o.id}">支付</a><a class="link muted act-cancel" data-id="${o.id}">取消</a>${detail}`
+    return `<a class="link act-pay" data-id="${o.id}" data-track="order_pay_click" data-track-props='{"no":"${o.no}"}'>支付</a><a class="link muted act-cancel" data-id="${o.id}" data-track="order_cancel_click">取消</a>${detail}`
   }
   return detail
 }
@@ -172,6 +172,7 @@ function renderRoute(): void {
 
 function boot(): void {
   $('#fault-switch').addEventListener('click', () => void toggleFault())
+  // 故障开关的埋点由下方独立监听补（开关本体无 data-track 属性，避免与委托重复触发）
   $('#search').addEventListener('input', (e) => {
     keyword = (e.target as HTMLInputElement).value.trim()
     renderTable()

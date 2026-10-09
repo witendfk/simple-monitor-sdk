@@ -28,7 +28,8 @@
     "demo:full": "pnpm --filter @simple-monitor/server dev & sleep 2 && pnpm demo",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "pack:all": "node scripts/pack-all.mjs"
+    "pack:all": "node scripts/pack-all.mjs",
+    "size": "node scripts/size-check.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1",
