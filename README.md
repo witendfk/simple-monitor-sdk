@@ -92,7 +92,7 @@ app.use(MonitorVue)
 | HTTP | xhr / fetch 包装 | `FETCH_ERROR`（5xx / status 0；2xx 只进面包屑） |
 | 资源 | img/script/link `error` | `RESOURCE_ERROR` |
 
-同错误自动去重（`maxDuplicateCount`，默认 2 次）。SDK 自身上报地址在 XHR 通道被识别并跳过；fetch 通道暂未拦截（上报请求可能进面包屑，修复排期见开发总纲 §3.7）。
+同错误自动去重（`maxDuplicateCount`，默认 2 次）。SDK 自身上报地址在 XHR/fetch 双通道均被识别并跳过（防自循环）。
 
 ### 性能监控（默认开）
 
@@ -157,7 +157,7 @@ pnpm test          # 单元测试（vitest）
 pnpm typecheck     # 类型检查
 ```
 
-> 产品目标、架构决策、问题清单与路线图见 [开发总纲.md](./开发总纲.md)（唯一开发依据文档）。
+> 文档体系：[PRD](./docs/PRD.md)（需求）→ [SPEC](./docs/SPEC.md)（契约）→ [ARCHITECTURE](./docs/ARCHITECTURE.md)（架构）→ [DESIGN](./docs/DESIGN.md)（ADR 决策）→ [CURRENT](./docs/tasks/CURRENT.md)（进度与待办）；历史问题台账见 [LEDGER](./docs/tasks/LEDGER.md)。
 
 ## License
 

@@ -1,5 +1,5 @@
 /**
- * 协议信封构建（M2，总纲 §五）
+ * 协议信封构建（M2，docs/SPEC.md 协议 v1）
  *
  * SDK 内部数据（TransportDataType / PerformanceReportData）→ protocol v1 事件与信封。
  * 职责边界：只做转换与归一化，不做网络——发送/重试/缓存见 batchSender.ts。

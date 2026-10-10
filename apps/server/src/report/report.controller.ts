@@ -1,7 +1,7 @@
 /**
  * 上报接入端点：POST /report/batch
  *
- * 职责链（总纲 §6.2 步骤 1）：raw body 解析 → 协议 zod 校验 → apikey 鉴权
+ * 职责链（docs/ARCHITECTURE.md §1 接入链路）：raw body 解析 → 协议 zod 校验 → apikey 鉴权
  * → 限流 → 入队 → 立即 204（毫秒级返回，接入层不做任何重活——削峰的本质）。
  */
 import { Body, Controller, Headers, HttpCode, Inject, Post, Req, Res } from '@nestjs/common'

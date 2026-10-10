@@ -1,7 +1,7 @@
 /**
  * 服务端入口：CORS 回显 origin + credentials（SDK 上报 withCredentials=true），
  * body 解析用 express.json({ type: () => true })——sendBeacon 通道 Content-Type
- * 是 text/plain，默认 json parser 不解析（总纲 §6.2 已记录的坑）。
+ * 是 text/plain，默认 json parser 不解析（docs/SPEC.md §4.1 beacon 兼容）。
  */
 import 'reflect-metadata'
 import { Logger } from '@nestjs/common'

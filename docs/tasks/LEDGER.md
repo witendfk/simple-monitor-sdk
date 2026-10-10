@@ -1,3 +1,5 @@
+> **⛔ 历史归档（2026-10-10 冻结）**：本文档已退役，不再是任何事项的现行依据。现行文档体系：[PRD](../PRD.md)（需求）→ [SPEC](../SPEC.md)（契约）→ [ARCHITECTURE](../ARCHITECTURE.md)（拓扑与工程体系）→ [DESIGN](../DESIGN.md)（ADR 决策）→ [CURRENT](./CURRENT.md)（进度与待办）。源码/文档中的「总纲 §x.x」历史引用一律指向本文对应章节。
+
 # simple-monitor-sdk 开发总纲
 
 > **单一事实来源（Single Source of Truth）**：产品目标、架构决策、问题清单、整改方案、服务端设计、路线图全部以本文档为准。开发时以里程碑推进、以问题清单勾销、以验收标准判定完成。
@@ -12,11 +14,12 @@
 
 | 文档 | 角色 |
 |---|---|
-| 本文（开发总纲.md） | **唯一开发依据**：目标 / 决策 / 问题 / 路线图 |
-| [README.md](README.md) | 项目门面（对外），与总纲冲突时以总纲为准 |
+| [docs/PRD.md](../PRD.md) | **产品需求基线（做什么/做到什么程度）**：需求域 × 状态 × 里程碑映射，状态以代码核实为准；需求变更先改 PRD 再动代码 |
+| 本文（开发总纲.md） | **唯一开发依据（怎么做）**：目标 / 决策 / 问题 / 路线图；与 PRD 冲突时需求以 PRD 为准、实现路线以本文为准 |
+| [README.md](https://github.com/witendfk/simple-monitor-sdk/blob/feature/README.md) | 项目门面（对外），与总纲冲突时以总纲为准 |
 | `.zcode/skills/code-review-expert/` | **代码评审标准**（源自 sanyuan0704/sanyuan-skills + 本项目附加纪律）：review 代码一律按此执行 |
 | `apps/server/README.md` | 服务端快速开始（内存零依赖起步 / 基础设施形态 / API / 配置 / k6） |
-| `packages/*/README.md`、[packages/web-performance/ARCHITECTURE.md](packages/web-performance/ARCHITECTURE.md) | 子包说明（web-performance 架构文档 §6.4 "取全局 worst"表述过时，INP 实现为 ≤50 取最大 / >50 取 P98，M3 时修正） |
+| `packages/*/README.md`、[packages/web-performance/ARCHITECTURE.md](https://github.com/witendfk/simple-monitor-sdk/blob/feature/packages/web-performance/ARCHITECTURE.md) | 子包说明（web-performance 架构文档 §6.4 "取全局 worst"表述过时，INP 实现为 ≤50 取最大 / >50 取 P98，M3 时修正） |
 
 **已删除**（结论已并入本文）：框架与设计文档.md（架构速览修正后入附录 A）、健壮性与风险审查.md（并入 §三）、面试主线复盘.md（面试叙事待 M4/M6 后基于实际产物重写，此前不展开）、工程评审报告.md / 落地整改指南.md / 完整版产品路线图.md（整合为本文）、server/ARCHITECTURE.md（存储选型已由 Mongo 改为 ClickHouse，设计并入 §六）。
 
@@ -88,7 +91,7 @@ zod schema 为单一事实来源，TS 类型由 zod 推导；SDK 发送端（生
 browser 包是唯一 instrumentation 层（xhr/fetch/history/console 包装只发生在此）；web-performance 降级为纯计算引擎，订阅事件总线拿请求数据，不再自己碰原生 API。消灭双层包装与两套幂等标记。
 
 **ADR-4 存储：Postgres（元数据）+ ClickHouse（事件），放弃 Mongo**
-> **落地级设计（2026-09-30 补充，源自 g-heal-claw 对标复盘）**：见 [docs/存储与服务分层架构.md](docs/存储与服务分层架构.md)。要点：① CH 按 kind 分表（error_events/perf_events/behavior_events/api_events，分区+TTL+物化视图）替代 M4 单宽表；② PG 元数据全量 DDL（projects 双密钥/users/members/issues 状态机/alert_rules+history/releases/sourcemap_artifacts）替换内存实现；③ 服务分层 gateway → processors → storage(repositories) → query 五域；④ 实施切 P1 元数据落地 → P2 CH 分表 → P3 权限分离 → P4 gateway 加固 → P5 看板对齐，Memory 实现保留为本地零依赖形态（DIP 不变）。
+> **落地级设计（2026-09-30 补充，源自对标复盘）**：见 [docs/存储与服务分层架构.md（git 历史 cde90a5）](https://github.com/witendfk/simple-monitor-sdk/blob/cde90a5/docs/%E5%AD%98%E5%82%A8%E4%B8%8E%E6%9C%8D%E5%8A%A1%E5%88%86%E5%B1%82%E6%9E%B6%E6%9E%84.md)。要点：① CH 按 kind 分表（error_events/perf_events/behavior_events/api_events，分区+TTL+物化视图）替代 M4 单宽表；② PG 元数据全量 DDL（projects 双密钥/users/members/issues 状态机/alert_rules+history/releases/sourcemap_artifacts）替换内存实现；③ 服务分层 gateway → processors → storage(repositories) → query 五域；④ 实施切 P1 元数据落地 → P2 CH 分表 → P3 权限分离 → P4 gateway 加固 → P5 看板对齐，Memory 实现保留为本地零依赖形态（DIP 不变）。
 事件明细是 OLAP 负载（海量写、时间+维度聚合、TTL），ClickHouse 的 MergeTree/TTL/物化视图/`quantileTDigestState` 是为此而生，也是监控后端含金量最高的学习内容。项目/告警规则/SourceMap 工件等小量事务数据放 Postgres。
 回退条款：ClickHouse 一个月窗口内若学习成本失控，可退 Mongo + 自实现近似分位数。
 
@@ -104,7 +107,7 @@ fixture 页面 playwright 双跑（自研 vs `web-vitals` 官方库），断言 
 **ADR-8 行为域埋点：采集升格而非新起炉灶，协议加性演进**
 定位（§一）早已含"行为"，§五规格 2 已预留行为采样、§6.2 已设计 PV 查询——M7 起将其兑现。方案三件套：(a) **自动采集升格**：DOM click/路由变化/console 已在采集（现仅进面包屑），将其中 PV（首次加载 + onRouteChange 钩子）、停留时长（visibilitychange 累计 + 离场期 flush，复用 M2 通道状态机）、曝光（IntersectionObserver，每 view 去重）升格为一等事件；面包屑继续承担错误上下文角色不变。(b) **代码埋点 API**：core 增 `track(name, props)` / `time(name)`，`log()` 语义不变。(c) **声明式埋点**：`data-track` 属性族（点击）+ `data-expose`（曝光）。协议新增 kind behavior/api，信封结构与既有 kind 不动、PROTOCOL_VERSION 维持 1（加性演进）。旧服务端兼容策略（批量信封下 400 会整包拒绝，必须防连带丢弃）：**行为/api 事件固定走独立信封组**（不经 dsn 回落与 error 合并）为默认；遇 4xx 再降级重试剔除未支持 kind——双保险确保错误/性能主通道不受行为域演进影响。kind api（成功请求结构化上报）为体量大头：默认采样 0.1（可调），复用 filterXhrUrlRegExp 为白名单，与面包屑「2xx 只进面包屑」语义并行不重复上报。采样按域独立（`trackSampleRate`，错误仍 100%）。可视化圈选明确不做：选择器管理 + DOM 脆弱性成本远超收益，出现真实业务需求再立项。注意 M1 曾按"配置项=承诺"纪律删除 enableTrack 死配置（§3.5），M7 重新引入的 track 选项为实装语义，命名与旧死配置区分。
 
-**ADR-8 实现细则增补（2026-09-30，源自 g-heal-claw SDK 对比复盘——已验证的实现细节直接吸收）**：
+**ADR-8 实现细则增补（2026-09-30，源自 SDK 对比复盘——已验证的实现细节直接吸收）**：
 1. **PV 去重**：同 URL 连续 PV 合并（防 replaceState 刷 URL 重复上报），PV 记录 loadType（navigate/reload/back_forward）。
 2. **表单全埋点**：`data-track` 委托扩展覆盖 form submit（capture 阶段），与 click 同族。
 3. **曝光判定**：IntersectionObserver + 元素停留 ≥500ms 才算有效曝光；同一 selector 1s 节流窗口（防连击误触发）；每 view 去重。
@@ -502,7 +505,7 @@ docker-compose：nest + clickhouse + postgres + redis 四容器（dashboard 独�
 | M4 | ☑（主体） | 0.5 天（2026-09-29 会话内完成） | NestJS 接入层（POST /report/batch：raw body 兼容 beacon text/plain → protocol zod 校验 → apikey 鉴权 → 限流 429+Retry-After → 入队 204）+ Ingest 消费（二次校验/归一化/截断/服务端 FNV 指纹含首帧位置）+ 查询 API（overview/errors 分组/详情/性能分位）+ **DIP 三接口双实现**（IEventQueue：Memory/RedisStream[XREADGROUP+XAUTOCLAIM pending 重投+死信流]；IEventStorage：Memory/ClickHouse[MergeTree+TTL30d+错误组/性能分位物化视图]；IRateLimiter：Memory/Redis INCR）。**本地无 docker 的验证策略**：内存实现全链路 e2e（186 测试含 14 条 server），基础设施实现编译期验证 + docker-compose/init.sql/k6 脚本交付。显式 token DI（vitest esbuild 无 emitDecoratorMetadata）。**遗留（有 docker 后）**：k6 实测 5k events/s、ClickHouse/Redis 实际联调、Postgres 项目表、真实 IndexedDB e2e |
 | M5 | ☑（主体） | 0.5 天（2026-09-29 会话内完成） | **SourceMap 符号化闭环**（玩具→产品分水岭）：SourcemapService（trace-mapping，release+URL 精确/后缀匹配，解析缓存）+ POST /api/sourcemaps 上传（map 内容 fail-fast 校验）+ bin/sourcemap-cli（零依赖，CI 构建后步骤可直接用）+ 详情 API symbolicatedStack（无法还原帧 original=null 透传）；e2e 用 esbuild 真实产 map 验证原始源码位置还原。**发版回归标记**：errorGroups 增 releases/firstSeenRelease，?release= 查询带 isNewInRelease。**自建看板 apps/dashboard**（ADR-5，Vite+React+ECharts）：概览（统计卡+Top 错误柱图）/错误列表（发版过滤+新错误徽标）/详情（符号化堆栈高亮+面包屑时间线）/性能分位，10s 自动刷新。**遗留**：rrweb 回放进详情（M6）、告警配置页（M6）、SourceMap 工件持久化（内存，接 Postgres 归 M4 遗留）。**产物验证补强（0286529 后评审批次）**：tarball 全新安装验证暴露三处发布级缺陷并修复——react 未声明 peer（monorepo devDep 掩盖）/ web 门面主入口 re-export 框架适配器（强制拖入 react+vue，已拆子路径 @simple-monitor/web/react|/vue，主入口零框架依赖，react 外置复用宿主单例防双实例）/ browser init 无 window 守卫（SSR init 崩溃，现门面只绑配置跳过采集）；打包出口规范化 `pnpm pack:all` → release/*.tgz |
 | M6 | ☑（收口） | 0.5 天（2026-09-29 会话内完成） | **告警引擎**（error_spike 突增 / perf_threshold 阈值两类规则 + minCount 低流量兜底 + 冷却防轰炸 + 投递失败不进冷却下轮重试 + FetchWebhookSender[文本+结构化双格式]）+ 规则 CRUD/触发记录 API + **看板第五视图**（规则管理/启停/触发记录）。**演示链路贯通**：demo dsn 相对路径 + vite 代理（DEMO_TARGET 可切 mock/真服务端），demo:full 一条命令起全链路。**npm 发布就绪**：PUBLISH.md（changesets 三步/首发检查单/CI 自动发布）。**文档站**：vitepress（快速开始/配置矩阵/架构 ADR/服务端/看板/告警/发布），docs:build 验证。**rrweb 回放预留延后**（非不做：协议 replay 占位保留；收口期录制/播放器/存储三件套投入产出比低，待回放需求明确后实装——见裁剪线）。**验收状态**：199 tests / 七门禁全绿（门禁范围：packages+server，dashboard tsx 未纳入——§3.7）；「陌生人 15 分钟接入」待 npm 真实发布后由仓库所有者实测（PUBLISH.md 检查单） |
-| M7 | ☑（主体） | 0.5 天（2026-09-30 会话内完成） | **行为域埋点全部落地**：协议 v1.1 加性扩展（kind behavior 四类 + kind api + LIMITS 防风暴）；browser 采集升格（PV 含 loadType 与同 URL 合并 / 停留时长 visibilitychange 累计离场 flush / 曝光 500ms 停留+1s 节流+每 view 去重 / data-track 点击与 form submit 委托 / 白屏 16 点检测）；core track()/time() + trackSampleRate/apiSampleRate 按域采样 + 独立信封组（BehaviorTracker，旧端 400 只丢行为组）；服务端 normalize 白名单入库 + /api/behaviors 查询端点（M9 事件浏览器雏形）+ init.sql kind 扩展；体积门禁进 CI（pnpm size，9 包 gzip 基线×1.2 只降不增）。附带：传输最佳实践（online 即时重放 / beacon 64KB 拆批；image 降级评估后放弃）+ LongTask 三档分档。实现细节吸收自 g-heal-claw SDK 对比复盘（ADR-8 增补）。**验收**：236 测试全绿（行为契约 3 + tracker 6）；demo-app 挂触发点后通道冒烟通过（PV/expose/track 经 /api/behaviors 可查）；存量回归全绿；体积门禁生效。**遗留**：page_dwell 端到端实测（需 tab hidden 触发）；CH 形态 behavior 明细列（M9 补） | **行为域埋点**（ADR-8 + §五 v1.1）：协议加性扩展（kind behavior/api + LIMITS）；browser 采集升格（PV / 停留时长离场 flush / 曝光每 view 去重 / data-track 委托）；core `track()`/`time()` + `trackSampleRate` 按域采样；服务端 normalize 白名单 + ClickHouse 列扩展（通道冒烟）；体积门禁进 CI（gzip 基线×1.2，只降不增） |
+| M7 | ☑（主体） | 0.5 天（2026-09-30 会话内完成） | **行为域埋点全部落地**：协议 v1.1 加性扩展（kind behavior 四类 + kind api + LIMITS 防风暴）；browser 采集升格（PV 含 loadType 与同 URL 合并 / 停留时长 visibilitychange 累计离场 flush / 曝光 500ms 停留+1s 节流+每 view 去重 / data-track 点击与 form submit 委托 / 白屏 16 点检测）；core track()/time() + trackSampleRate/apiSampleRate 按域采样 + 独立信封组（BehaviorTracker，旧端 400 只丢行为组）；服务端 normalize 白名单入库 + /api/behaviors 查询端点（M9 事件浏览器雏形）+ init.sql kind 扩展；体积门禁进 CI（pnpm size，9 包 gzip 基线×1.2 只降不增）。附带：传输最佳实践（online 即时重放 / beacon 64KB 拆批；image 降级评估后放弃）+ LongTask 三档分档。实现细节吸收自 SDK 对比复盘（ADR-8 增补）。**验收**：236 测试全绿（行为契约 3 + tracker 6）；demo-app 挂触发点后通道冒烟通过（PV/expose/track 经 /api/behaviors 可查）；存量回归全绿；体积门禁生效。**遗留**：page_dwell 端到端实测（需 tab hidden 触发）；CH 形态 behavior 明细列（M9 补） | **行为域埋点**（ADR-8 + §五 v1.1）：协议加性扩展（kind behavior/api + LIMITS）；browser 采集升格（PV / 停留时长离场 flush / 曝光每 view 去重 / data-track 委托）；core `track()`/`time()` + `trackSampleRate` 按域采样；服务端 normalize 白名单 + ClickHouse 列扩展（通道冒烟）；体积门禁进 CI（gzip 基线×1.2，只降不增） |
 | M7.5 | ☐ | — | **生产级存储架构落地**（ADR-4 落地设计，docs/存储与服务分层架构.md）：P1 PG 元数据（projects/issues/alert_rules/releases）→ P2 CH 按事件类型分表+物化视图 → P3 权限分离（§3.8 消零）→ P4 gateway 幂等+令牌桶 → P5 看板 4 分组页面对齐（含健康度英雄卡/9 分类/维度 tabs）。Memory 实现保留为零依赖形态 | 
 | M8 | ☐ | — | **看板横切与访问域**（零 SDK/协议改动）：时间范围 + 维度过滤横切全部查询端点（SQL 全参数化）；issue 趋势 + 受影响会话数；`/api/visits`、`/api/requests`；看板访问/API 视图 + 全局时间/过滤栏 |
 | M9 | ☐ | — | **埋点分析域**：事件浏览器（事件名聚合/最近样本/属性 Top-N）；漏斗 `windowFunnel`（事件名序列 + 窗口期）；N 日留存 `retention()`（按 trackerId）；看板事件/漏斗/留存三视图 |

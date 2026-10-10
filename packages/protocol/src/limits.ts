@@ -1,5 +1,5 @@
 /**
- * 字段截断上限（总纲 §四 4.2 / §五 规格）。
+ * 字段截断上限（docs/SPEC.md LIMITS）。
  *
  * 约定：
  *  - 数组类上限（maxBreadcrumbs / maxStackFrames / maxEventsPerEnvelope / maxMetricsPerEvent）

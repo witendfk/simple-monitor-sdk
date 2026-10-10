@@ -1,7 +1,7 @@
 /**
  * 告警引擎：定时评估全部启用规则 → 触发即投递 webhook（带冷却防轰炸）。
  *
- * 设计（总纲 §6.2 步骤 8）：
+ * 设计（docs/ARCHITECTURE.md §1 告警链路）：
  *  - 突增规则：近 windowMin 错误数 > max(minCount, 基线均值 × multiplier)
  *  - 阈值规则：metric 的 P75 持续超阈（单窗口命中即报，冷却承担"持续"语义）
  *  - 冷却：ruleId → lastFiredAt，窗口内跳过（投递失败不进入冷却，下轮重试）

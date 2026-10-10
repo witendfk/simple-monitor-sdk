@@ -434,7 +434,7 @@ export class TransportData implements ITransportData {
     }
   }
 
-  /** 性能数据采样（总纲 §五规格 2：错误 100%，perf 按 sampleRate） */
+  /** 性能数据采样（docs/SPEC.md 采样规格：错误 100%，perf 按 sampleRate） */
   private shouldSamplePerf(): boolean {
     const rate = this.options.sampleRate
     if (rate === undefined || rate >= 1) return true

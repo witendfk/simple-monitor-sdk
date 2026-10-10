@@ -1,7 +1,7 @@
 # 发布流程（PUBLISH）
 
 > 前置：npm 账号 + `NPM_TOKEN`（GitHub Actions secrets）或本地 `npm login`。
-> 本文是唯一发布入口文档；`changesets` 管版本与 changelog。provenance **尚未启用**（规划：CI 发布 job 落地时加 `NPM_CONFIG_PROVENANCE: true` + `id-token: write` 权限，见总纲 §3.7）。
+> 本文是唯一发布入口文档；`changesets` 管版本与 changelog。provenance **尚未启用**（规划：CI 发布 job 落地时加 `NPM_CONFIG_PROVENANCE: true` + `id-token: write` 权限，见 docs/tasks/CURRENT.md 4.3）。
 
 ## 一、日常发布（三步）
 
@@ -17,7 +17,7 @@ git add . && git commit -m "chore: version packages"
 pnpm release
 ```
 
-`pnpm release` = `pnpm build && pnpm -r --filter "./packages/*" publish --access public --no-git-checks`（根 package.json）。发布范围：`packages/*`（9 个 SDK 包，`private` 未设置）；**apps/* 不发布**（server/dashboard 已标 private）。
+`pnpm release` = `pnpm build && pnpm -r --filter "./packages/*" publish --access public --no-git-checks`（根 package.json）。发布范围：`packages/*`（10 个 SDK 包，`private` 未设置）；**apps/* 不发布**（server/dashboard 已标 private）。
 
 > 不用 `changeset publish` 发布：其底层走 npm publish，不解析 `workspace:*` 协议（见 §五实测结论）。
 
@@ -47,7 +47,7 @@ pnpm release
 ```bash
 npm view @simple-monitor/web versions      # 版本存在
 npm i @simple-monitor/web                  # 干净项目安装
-# 15 分钟接入验证：按文档站快速开始跑通 init({dsn, apikey})
+# 15 分钟接入验证：按 README.md 快速开始跑通 init({dsn, apikey})
 ```
 
 ## 附：本地产物验证（不发布也能验证）
@@ -74,8 +74,8 @@ import { ErrorBoundary } from '@simple-monitor/web/react' // React 项目
 - [x] 首版 changeset 已消费：全包 0.0.1 → **0.1.0** + CHANGELOG 已生成
 - [x] `pnpm pack` 实测：**workspace:\* 协议在打包时解析为真实版本**（0.1.0，无残留）——
   发布脚本因此用 `pnpm -r publish`（npm publish 不解析 workspace 协议，勿改回）
-- [x] 九包 repository 字段齐（provenance 前提；provenance 本身未启用）；apps/* 已标 private 不发布
+- [x] 十包 repository 字段齐（provenance 前提；provenance 本身未启用）；apps/* 已标 private 不发布
 - [x] 根 `release` 脚本 = `pnpm build && pnpm -r --filter "./packages/*" publish --access public --no-git-checks`
-- [ ] 对外发布前分离公开上报 key 与管理权限（[开发总纲 §3.8](./开发总纲.md) P0，唯一剩余发布级风险）。错误消息脱敏、离线重放丢数（2xx 确认后删除）与 Webhook SSRF 双道防护已于 2026-09-30 修复批次关闭
+- [ ] 对外发布前分离公开上报 key 与管理权限（[docs/tasks/CURRENT.md §3.2](./docs/tasks/CURRENT.md) P0，唯一剩余发布级风险）。错误消息脱敏、离线重放丢数（2xx 确认后删除）与 Webhook SSRF 双道防护已于 2026-09-30 修复批次关闭
 - [ ] npm 侧创建 `simple-monitor` 组织并登录后执行 `pnpm release`；目前尚未实际发布
-- [ ] 发布后：文档站部署（`pnpm docs:build` 产物在 `docs/.vitepress/dist`）+ 陌生人 15 分钟验收
+- [ ] 发布前补面向使用者的接入指南；发布后由陌生人按指南完成 15 分钟接入验收

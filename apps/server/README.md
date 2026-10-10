@@ -1,6 +1,6 @@
 # @simple-monitor/server
 
-监控服务端（总纲 §六）：接收 SDK 上报 → 队列削峰 → 清洗/归一化 → 存储 → 查询 API。
+监控服务端（docs/ARCHITECTURE.md）：接收 SDK 上报 → 队列削峰 → 清洗/归一化 → 存储 → 查询 API。
 
 ## 快速开始（零依赖，内存实现）
 
@@ -59,9 +59,9 @@ k6 run -e TARGET=http://localhost:3000 -e RATE=5000 apps/server/k6/report.js
 - **告警 webhook 双道 SSRF 防护**：创建时静态判定（net.BlockList 覆盖私网/保留/环回/ULA/链路本地/NAT64 网段，IPv4-mapped 与尾点变体已覆盖）；发送前 DNS 解析复核 + 重定向逐跳复核（`redirect: 'manual'`，上限 3 跳）。已知边界：解析与连接之间的 TOCTOU 窗口仍在（彻底方案需连接级 socket 拦截）。`WEBHOOK_ALLOW_PRIVATE=1` 仅用于本地演示。
 - **Redis 消费循环有监管重启**：consumeLoop 任意终止都会在同一受控循环内退避重启（连续崩溃回归测试锁定）；真实 Redis/ClickHouse 故障联调仍待 docker 环境验收。
 - **重复消费未做去重**：at-least-once 语义下重试/重投/崩溃恢复会产生重复计数（errorId 已透传入库，去重方案待落地）。
-- **sourcemap 上传受全局 256KB body 上限限制**：真实项目的 map（常为 MB 级）会被 413 拒绝，仅玩具级 map 可上传（服务端需为 `/api/sourcemaps` 单独放开 parser 上限，见总纲 §3.7）。
+- **sourcemap 上传独立 20MB body 上限**：真实项目 MB 级 map 可正常上传；其余路由维持 256KB。
 
-完整的工程质量评估、风险优先级和验收条件见 [开发总纲 §3.8](../../开发总纲.md)。在公开 key 的管理权限分离完成前，不应将当前形态作为公网多项目服务部署。
+完整的工程质量评估、风险优先级和验收条件见 [docs/tasks/CURRENT.md](../../docs/tasks/CURRENT.md)。在公开 key 的管理权限分离完成前，不应将当前形态作为公网多项目服务部署。
 
 ## 配置（环境变量）
 
@@ -74,7 +74,7 @@ k6 run -e TARGET=http://localhost:3000 -e RATE=5000 apps/server/k6/report.js
 | `WEBHOOK_ALLOW_PRIVATE` | false | 置 `1` 放开 webhook 私网限制（仅本地演示） |
 | `ALERT_CHECK_INTERVAL_MS` | 300000 | 告警评估周期 |
 
-## 设计要点（详见 开发总纲.md §六）
+## 设计要点（详见 [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)）
 
 - 接入层只入队不写库：上报洪峰不能拖垮 HTTP 响应，否则 SDK 侧重试雪崩；
 - at-least-once：先处理后确认，失败重试 3 次 → 死信流；重复消费的去重未实现（见「当前形态边界」）；

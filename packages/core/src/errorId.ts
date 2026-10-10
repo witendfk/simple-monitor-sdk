@@ -4,7 +4,7 @@ import { ErrorTypes, EventTypes, ReportDataType } from '@simple-monitor/types'
 /**
  * generate error unique Id
  *
- * 指纹取舍（总纲 §五规格 1）：SDK 侧为 message 级 hash——目的是流量去重防刷屏，
+ * 指纹取舍（docs/SPEC.md 指纹规格）：SDK 侧为 message 级 hash——目的是流量去重防刷屏，
  * 不含堆栈/行列；分析精度由服务端 fingerprint（含首帧位置）负责。两层分工。
  *
  * @param data 错误上报数据

@@ -1,7 +1,7 @@
 /**
  * 传输协议 v1 —— zod schema 为单一事实来源，TS 类型全部由 schema 推导。
  *
- * 消费方式（总纲 ADR-2）：
+ * 消费方式（ADR-2，docs/DESIGN.md）：
  *  - 服务端接收端：import schema（运行时校验）；
  *  - SDK 发送端：`import type` 只取类型（生产 build 将 zod 与 schema 全部摇树，
  *    运行时零依赖、零体积）。
@@ -65,7 +65,7 @@ export const ErrorPayloadSchema = z.object({
   /** 出错页面 URL（SDK 端 getRealPath 归一后） */
   page: z.string().optional(),
   stackFrames: z.array(StackFrameSchema).max(LIMITS.maxStackFrames).optional(),
-  /** SDK 流量去重指纹（hashCode 数字）；服务端自算 fingerprint 做分析分组，见总纲 §五规格 1 */
+  /** SDK 流量去重指纹（hashCode 数字）；服务端自算 fingerprint 做分析分组，见 docs/SPEC.md 指纹规格 */
   errorId: z.number().optional(),
   componentName: z.string().optional(),
   customTag: z.string().optional(),
@@ -124,7 +124,7 @@ export const BreadcrumbSchema = z.object({
  * 行为域 v1.1（ADR-8 加性扩展：kind behavior / kind api）
  * ------------------------------------------------------------------ */
 
-/** behavior 单事件：behaviorType 判别（总纲 §五 v1.1） */
+/** behavior 单事件：behaviorType 判别（docs/SPEC.md v1.1） */
 export const BehaviorPayloadSchema = z.discriminatedUnion('behaviorType', [
   z.object({
     behaviorType: z.literal('page_view'),

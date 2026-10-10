@@ -15,7 +15,7 @@ export class Options {
   traceIdFieldName: string = 'traceparent'
   throttleDelayTime: number = 200
   maxDuplicateCount: number = 2
-  /** 性能数据采样率 0~1（默认 1 不采样；错误始终 100% 上报，总纲 §五规格 2） */
+  /** 性能数据采样率 0~1（默认 1 不采样；错误始终 100% 上报，docs/SPEC.md 采样规格） */
   sampleRate: number = 1
   /** 行为域采样率（默认 1） */
   trackSampleRate: number = 1

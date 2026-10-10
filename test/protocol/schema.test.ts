@@ -11,7 +11,7 @@ import {
   type TransportEnvelope,
 } from '../../packages/protocol/src'
 
-/** 构造一份合法信封（测试工厂，字段与总纲 §五 schema 一一对应） */
+/** 构造一份合法信封（测试工厂，字段与 docs/SPEC.md 协议 schema 一一对应） */
 const validEnvelope = (): TransportEnvelope => ({
   protocolVersion: PROTOCOL_VERSION,
   sentAt: 1759000000000,
@@ -43,7 +43,7 @@ const validEnvelope = (): TransportEnvelope => ({
 })
 
 describe('protocol v1（M0 契约）', () => {
-  it('协议版本为 1，LIMITS 与总纲 §五规格一致', () => {
+  it('协议版本为 1，LIMITS 与 docs/SPEC.md 规格一致', () => {
     expect(PROTOCOL_VERSION).toBe(1)
     expect(LIMITS.message).toBe(1024)
     expect(LIMITS.httpBody).toBe(2048)
