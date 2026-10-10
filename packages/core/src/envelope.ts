@@ -5,7 +5,7 @@
  * 职责边界：只做转换与归一化，不做网络——发送/重试/缓存见 batchSender.ts。
  */
 import type { BreadcrumbPushData, DeviceInfo, ReportDataType } from '@simple-monitor/types'
-import { interceptStr, mask, sanitizePageUrl } from '@simple-monitor/utils'
+import { interceptStr, mask, maskDeep, sanitizePageUrl } from '@simple-monitor/utils'
 import {
   LIMITS,
   PROTOCOL_VERSION,
@@ -234,6 +234,8 @@ export function buildEnvelope(ctx: EnvelopeContext, events: MonitorEvent[]): Tra
       viewId: ctx.viewId,
       device: toDeviceSnapshot(ctx.deviceInfo),
     },
-    events,
+    // 出口兜底脱敏：入口三件套之外的性能 detail / 手动上报旁路在此统一收口。
+    // 幂等（已脱敏结构再走一遍不变），error.http.url 的「遮蔽保 query」设计不受影响。
+    events: maskDeep(events) as MonitorEvent[],
   }
 }

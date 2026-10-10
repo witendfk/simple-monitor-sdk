@@ -186,4 +186,73 @@ describe('buildEnvelope', () => {
     })
     expect(validateEnvelope(envelope).success).toBe(true)
   })
+
+  it('出口兜底脱敏（§3.3 P0）：perf detail 的手机号/凭证无原值，数值主值不受影响', () => {
+    const envelope = buildEnvelope(
+      {
+        apiKey: 'k1',
+        release: 'v1.2.3',
+        env: 'production',
+        sdkName: '@simple-monitor/web',
+        sdkVersion: '0.0.1',
+        sessionId: 'sess-1',
+        trackerId: 'track-1',
+        page: 'http://x.com/',
+      },
+      [
+        {
+          kind: 'perf',
+          metrics: [
+            {
+              name: 'navigation-timing',
+              value: 1234,
+              detail: { ua: 'user 13812345678', phase: 'token=abc123' },
+            },
+          ],
+        },
+      ]
+    )
+    const s = JSON.stringify(envelope.events)
+    expect(s).not.toContain('13812345678')
+    expect(s).toContain('[phone]')
+    expect(s).toContain('[credential]')
+    expect(
+      (envelope.events[0] as { kind: 'perf'; metrics: Array<{ value: number }> }).metrics[0].value
+    ).toBe(1234)
+  })
+
+  it('出口兜底脱敏（§3.3 P0）：error 旁路字段也遮蔽；http.traceId 标识键保留、url 保 query 设计不变', () => {
+    const event = toErrorEvent({
+      type: ErrorTypes.FETCH_ERROR,
+      message: 'boom 13812345678',
+      componentName: 'Order_13812345678',
+      request: {
+        method: 'GET',
+        url: 'http://api.x.com/u/13812345678?token=secret9',
+        traceId: '1234567890abcdef1234567890abcdef',
+      },
+    } as any)
+    const envelope = buildEnvelope(
+      {
+        apiKey: 'k1',
+        release: 'v1.2.3',
+        env: 'production',
+        sdkName: '@simple-monitor/web',
+        sdkVersion: '0.0.1',
+        sessionId: 'sess-1',
+        trackerId: 'track-1',
+        page: 'http://x.com/',
+      },
+      [event]
+    )
+    const s = JSON.stringify(envelope.events)
+    expect(s).not.toContain('13812345678')
+    expect(s).not.toContain('secret9')
+    const err = (envelope.events[0] as any).error
+    expect(err.componentName).toContain('[phone]')
+    expect(err.http.traceId).toBe('1234567890abcdef1234567890abcdef')
+    // error.http.url 的既有设计：遮蔽凭证、保留 query 结构（区别于 PV/成功 API 的剥 query）
+    expect(err.http.url).toContain('?')
+    expect(validateEnvelope(envelope).success).toBe(true)
+  })
 })

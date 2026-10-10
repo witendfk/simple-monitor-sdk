@@ -16,6 +16,7 @@
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-express": "^10.4.15",
     "@simple-monitor/protocol": "workspace:*",
+    "@simple-monitor/utils": "workspace:*",
     "express": "^4.18.2",
     "ioredis": "^5.4.2",
     "reflect-metadata": "^0.2.2",

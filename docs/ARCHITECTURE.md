@@ -13,7 +13,7 @@ SDK（十包）──POST /report/batch──▶ 接入层（zod 校验 + 限流
                               Redis Stream 削峰（MAXLEN ~100000，可降级 Memory 队列）
                                     │ XREADGROUP 批量 100 → 处理 → XACK（pending 重投，3 次进死信）
                                     ▼
-                              Ingest（schema 校验/字段投影/部分截断/服务端 fingerprint；二次脱敏 🚧）
+                              Ingest（schema 校验/字段投影/脱敏截断/服务端 fingerprint）
                                     │
                                     ▼
                      存储（Memory 形态 ⇄ ClickHouse 明细 + 物化视图；Postgres 元数据 🚧 M7.5）
@@ -55,7 +55,7 @@ types / shared（契约） → utils（AOP replaceOld、微任务队列、mask �
 
 **性能**：PerformanceObserver（buffered + firstHiddenTime 过滤）→ web-performance MetricsStore → reportCallback（普通 rIC / 紧急同步）→ web 门面转 core 传输（不去重）。
 
-**行为**：browser 采集升格（PV/停留/曝光/data-track）+ core `track()/time()` → BehaviorTracker（按域采样 + 独立信封组）→ 独立于 error/perf 主通道发送。当前独立 BatchSender 未绑定 pagehide/hidden，`BehaviorTracker.flushLeaving()` 为空；行为/API 信封也未复用错误主通道的出口脱敏，修复项见 CURRENT。
+**行为**：browser 采集升格（PV/停留/曝光/data-track）+ core `track()/time()` → BehaviorTracker（按域采样 + 独立信封组）→ 独立于 error/perf 主通道发送。当前独立 BatchSender 未绑定 pagehide/hidden，`BehaviorTracker.flushLeaving()` 为空（修复项见 CURRENT）；行为/API 信封出口已接入与主通道同一套脱敏（PV/成功 API URL 剥 query + maskDeep，2026-10-10）。
 
 ### 2.3 已验证的正确设计（重构/演进时保留）
 
@@ -69,7 +69,7 @@ CLS session-window、INP interactionId 聚合 + P98（≤50 取最大 / >50 取 
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `report/`             | POST /report/batch：raw body（beacon text/plain 兼容）+ gunzip 中间件 + zod 校验 + apikey 鉴权 + 限流 + 入队              |
 | `queue/`              | producer（XADD MAXLEN）/ consumer（XREADGROUP → ingest → XACK；死信）；Memory/Redis 双实现                                |
-| `ingest/`             | schema 校验、字段投影、部分截断、kind 归一化和服务端 fingerprint（FNV，含首帧位置）；二次脱敏与全字段截断待补             |
+| `ingest/`             | schema 校验、字段投影、二次脱敏（mask + URL 剥 query，脱敏先于指纹）、截断、kind 归一化和服务端 fingerprint（FNV，含首帧位置）；stack 总量截断待补 |
 | `storage/`            | **DIP 三接口双实现**：IEventQueue（Memory/RedisStream）、IEventStorage（Memory/ClickHouse）、IRateLimiter（Memory/Redis） |
 | `query/`              | /api/overview、/api/errors、/api/errors/:fp（symbolicatedStack）、/api/performance、/api/behaviors                        |
 | `alert/`              | 规则引擎（error_spike / perf_threshold）+ 冷却 + webhook（SSRF 双道防护：BlockList + DNS 复核 + 重定向逐跳）              |

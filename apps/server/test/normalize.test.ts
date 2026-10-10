@@ -1,5 +1,5 @@
 /**
- * normalize 纯函数测试：kind 归一 / 截断兜底 / 服务端指纹
+ * normalize 纯函数测试：kind 归一 / 截断兜底 / 服务端指纹 / 二次脱敏兜底
  */
 import { describe, it, expect } from 'vitest'
 import { PROTOCOL_VERSION, type TransportEnvelope } from '@simple-monitor/protocol'
@@ -98,5 +98,96 @@ describe('normalizeEnvelope', () => {
     const { events, rejected } = normalizeEnvelope(env)
     expect(events).toHaveLength(0)
     expect(rejected).toBe(1)
+  })
+})
+
+describe('二次脱敏兜底（§3.3 P0：不信任 SDK 出口，落库前统一遮蔽）', () => {
+  it('行为/API/perf 明细：敏感原值全通道无残留，标识键与数值保留', () => {
+    const env = envelopeFixture()
+    env.events = [
+      {
+        kind: 'behavior',
+        behavior: {
+          behaviorType: 'page_view',
+          url: '/pay?token=secret9&phone=13812345678',
+          utmSource: 'nl',
+        },
+      },
+      {
+        kind: 'behavior',
+        behavior: {
+          behaviorType: 'track',
+          name: 'submit_order',
+          props: { phone: '13812345678', jwt: 'Bearer eyJhbGciOiJIUzI1NiJ9.abc.def' },
+          from: 'declarative',
+        },
+      },
+      {
+        kind: 'api',
+        api: {
+          method: 'GET',
+          url: 'https://api.x.com/orders/1?token=secret9',
+          status: 200,
+          durationMs: 33,
+          traceId: '1234567890abcdef1234567890abcdef',
+        },
+      },
+      {
+        kind: 'perf',
+        metrics: [
+          { name: 'navigation-timing', value: 2100, detail: { note: 'phone 13812345678' } },
+        ],
+      },
+    ]
+    const { events, rejected } = normalizeEnvelope(env)
+    expect(rejected).toBe(0)
+    const s = JSON.stringify(events)
+    expect(s).not.toContain('13812345678')
+    expect(s).not.toContain('secret9')
+    expect(s).not.toContain('eyJhbGciOiJIUzI1NiJ9')
+    expect(s).toContain('[phone]')
+    const apiEvent = events.find((e) => e.kind === 'api')!
+    expect((apiEvent.api as Record<string, unknown>).traceId).toBe(
+      '1234567890abcdef1234567890abcdef'
+    )
+    expect((apiEvent.api as Record<string, unknown>).url).toBe('https://api.x.com/orders/1')
+    const perfEvent = events.find((e) => e.kind === 'perf')!
+    expect(perfEvent.perf?.[0].value).toBe(2100)
+  })
+
+  it('旧版 SDK 的 error 载荷（未脱敏）：message/帧/面包屑/http 落库前遮蔽，指纹基于脱敏文本', () => {
+    const env = envelopeFixture()
+    const rawError = (env.events[0] as { error: Record<string, unknown> }).error
+    rawError.message = 'login failed: token=abc123 phone 13812345678'
+    rawError.stackFrames = [
+      { url: 'http://x.com/app.js?token=secret9', func: 'submit', line: 42, column: 7 },
+    ]
+    rawError.http = {
+      method: 'POST',
+      url: 'http://api.x.com/login?token=secret9',
+      status: 401,
+      traceId: 't-1234567890',
+    }
+    ;(env.events[0] as { breadcrumbs: Array<Record<string, unknown>> }).breadcrumbs = [
+      { type: 'Console', category: 'debug', data: { pwd: 'hunter2' } },
+    ]
+    const { events } = normalizeEnvelope(env)
+    const errorEvent = events.find((e) => e.kind === 'error')!
+    const s = JSON.stringify(errorEvent)
+    expect(s).not.toContain('abc123')
+    expect(s).not.toContain('13812345678')
+    expect(s).not.toContain('secret9')
+    expect(s).not.toContain('hunter2')
+    expect(errorEvent.error?.message).toContain('[credential]')
+    // 标识键保留（10 位数字段不被数字串规则咬掉）
+    expect(errorEvent.error?.http?.traceId).toBe('t-1234567890')
+    // 指纹基于脱敏后文本计算（跨 SDK 版本分组稳定）
+    expect(errorEvent.error?.fingerprint).toBe(
+      computeFingerprint({
+        type: 'JAVASCRIPT_ERROR',
+        message: errorEvent.error!.message,
+        stackFrames: errorEvent.error!.stackFrames,
+      } as unknown as FingerprintInput)
+    )
   })
 })

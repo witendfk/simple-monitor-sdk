@@ -96,9 +96,9 @@ zod schema 为单一事实来源，TS 类型由 zod 推导；SDK 发送端（生
 | 字段                      | 规格值（LIMITS）                                                            | 现状偏差（→CURRENT §3.3）              |
 | ------------------------- | --------------------------------------------------------------------------- | --------------------------------------- |
 | message                   | 1024 个 UTF-16 字符                                                         | —                                       |
-| stack                     | 32KB（SDK 目标上限）                                                        | 服务端二次截断未全覆盖（随 P0）         |
+| stack                     | 32KB（SDK 目标上限）                                                        | 服务端总量截断未覆盖（面包屑/http 已随 2026-10-10 批次对齐 LIMITS） |
 | HTTP reqData/responseText | 2048 个 UTF-16 字符                                                         | —                                       |
-| 面包屑单条                | data 序列化后 512 个 UTF-16 字符，≤50 条（钳制 [1,50]）                     | 服务端截断未全覆盖（随 P0）             |
+| 面包屑单条                | data 序列化后 512 个 UTF-16 字符，≤50 条（钳制 [1,50]）                     | —                                       |
 | behavior name             | 128 字符                                                                    | —                                       |
 | trackProps                | 序列化 ≤2048B 且键数 ≤32；代码埋点与 `data-track-props` 同规则              | 声明式入口未限制（P2）                  |
 | 单会话 behavior 事件      | 采集预算 500 条（仅计行为事件，到限丢新）；待发送缓冲超限丢最旧             | 成功 API 计入同一预算，待拆分（P2）     |
@@ -109,7 +109,7 @@ zod schema 为单一事实来源，TS 类型由 zod 推导；SDK 发送端（生
 
 1. **指纹分工**：SDK errorId = message 级 hash（流量去重，`maxDuplicateCount` 兜底）；服务端 fingerprint = (type + message + 堆栈首帧 url:line:col) hash。流量侧粗、分析侧细。
 2. **采样**：错误 100% 不采样；perf 按 `sampleRate`、行为按 `trackSampleRate`、成功请求按 `apiSampleRate`（默认 0.1）在采集层过滤（省流量也省内存）。
-3. **隐私目标**：默认脱敏（手机号/身份证/卡号/凭证/JWT → `[phone]` 等分类替换）+ 全字段截断；错误/性能与行为/API 信封均在出口兜底，服务端独立二次脱敏；`enablePrivacyMask` 默认开。当前行为属性、PV/成功 API URL 和声明式属性可绕过 SDK 脱敏，服务端也未执行二次脱敏，见 CURRENT 评审修复清单。
+3. **隐私目标**：默认脱敏（手机号/身份证/卡号/凭证/JWT → `[phone]` 等分类替换）+ 全字段截断；错误/性能与行为/API 信封均在出口兜底，服务端独立二次脱敏；`enablePrivacyMask` 默认开。出口兜底（`maskDeep`：标识键/数值保留、先 mask 后截断、幂等）与 ingest 二次脱敏已落地（2026-10-10，PV/成功 API URL 剥 query）；声明式属性在出口被遮蔽+截断，但采集端 LIMITS（键数/序列化体积）预算仍未实现（P2）。
 
 ### 3.5 版本演进纪律
 
@@ -153,7 +153,7 @@ zod schema 为单一事实来源，TS 类型由 zod 推导；SDK 发送端（生
 | 队列              | Redis Stream `XADD MAXLEN ~ 100000`（达到上限丢最老）；XREADGROUP 批量 100 → 处理 → XACK；失败重试 3 次 → 死信流 `report:dead`；未被裁剪的 pending 消息可重投                   | ✅ ⚠️ 真实 Redis 联调待 |
 | 崩溃自愈          | 消费循环为监管循环（supervisedLoop），内层意外终止退避重启                                                                                                                      | ✅                      |
 | 去重              | SDK errorId 抑制客户端重复上报；服务端 fingerprint 只做分组，重复消费会重复计数；事件级幂等 🚧 M7.5 P4                                                                          | 🚧                      |
-| ingest            | 目标：字段白名单 → 二次脱敏 → 全字段截断 → kind 归一 → fingerprint。现状：schema 校验与字段投影、部分截断及 fingerprint 已实现；无二次脱敏，stack/面包屑/http body 截断未全覆盖 | ✅ 部分；🚧 隐私兜底    |
+| ingest            | 目标：字段白名单 → 二次脱敏 → 全字段截断 → kind 归一 → fingerprint。现状：schema 校验、字段投影、二次脱敏（mask + URL 剥 query，脱敏先于指纹）与 fingerprint 已实现；面包屑 512B、http 2KB 截断对齐 LIMITS，stack 总量 32KB 截断未覆盖 | ✅ 二次脱敏兜底；🚧 stack 总量截断 |
 | 告警公式          | error_spike：近 15min 错误数 > max(20, 前 6h 均值×3)；perf_threshold：如 LCP P75 > 4000ms 持续 2 桶；minCount 低流量兜底                                                        | ✅                      |
 | 告警防轰炸        | webhook 投递后 15min 冷却；投递失败不进冷却，下轮重试；fetch 5s 超时                                                                                                            | ✅                      |
 | webhook SSRF 防护 | 双道：字面值 `net.BlockList`（私网/保留/环回段）+ 发送前 DNS 解析复核 + 重定向逐跳复核（`redirect: 'manual'`，≤3 跳）；残余 TOCTOU 窗口已在 server README 声明                  | ✅                      |

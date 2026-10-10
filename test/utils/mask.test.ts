@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 /**
  * 隐私脱敏测试（M1 收尾批次）：mask 纯函数 + 三入口接入行为
- * （DOM innerText / console args / HTTP 请求体）
+ * （DOM innerText / console args / HTTP 请求体）+ 出口兜底（maskDeep / stripUrlQuery）
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mask, setPrivacyMaskEnabled, htmlElementAsString } from '@simple-monitor/utils'
+import {
+  mask,
+  maskDeep,
+  stripUrlQuery,
+  setPrivacyMaskEnabled,
+  htmlElementAsString,
+} from '@simple-monitor/utils'
 import { BreadCrumbTypes } from '@simple-monitor/types'
 import { MonitorClient, handleConsole } from '@simple-monitor/core'
 import { setupReplace } from '../../packages/browser/src/setupReplace'
@@ -36,6 +42,87 @@ describe('mask 纯函数', () => {
     setPrivacyMaskEnabled(false)
     expect(mask('13812345678')).toBe('13812345678')
     setPrivacyMaskEnabled(true)
+  })
+})
+
+describe('stripUrlQuery（PV / 成功请求 URL 的出口策略）', () => {
+  it('绝对 URL 剥 query 与 hash，保留 origin+pathname', () => {
+    expect(stripUrlQuery('https://a.com/p?token=abc&id=1#sec')).toBe('https://a.com/p')
+  })
+  it('相对路径剥 query（PV 的 pathname+search 形态）', () => {
+    expect(stripUrlQuery('/list?page=2&q=x#top')).toBe('/list')
+  })
+  it('无 query/hash 原样返回；非字符串原样返回', () => {
+    expect(stripUrlQuery('/detail/42')).toBe('/detail/42')
+    expect(stripUrlQuery('')).toBe('')
+    expect(stripUrlQuery(undefined as unknown as string)).toBe(undefined)
+  })
+})
+
+describe('maskDeep（信封出口兜底）', () => {
+  beforeEach(() => setPrivacyMaskEnabled(true))
+
+  it('嵌套字符串遮蔽：props 里的手机号/JWT 无原值', () => {
+    const out = maskDeep({
+      props: { phone: '13812345678', jwt: 'Bearer eyJhbGciOiJIUzI1NiJ9.abc.def' },
+    })
+    const s = JSON.stringify(out)
+    expect(s).not.toContain('13812345678')
+    expect(s).not.toContain('eyJhbGciOiJIUzI1NiJ9')
+    expect(s).toContain('[phone]')
+    expect(s).toContain('[credential]')
+  })
+  it('数值/布尔原样保留（13 位时间戳不被数字串规则误伤）', () => {
+    const out = maskDeep({ time: 1727568000000, ok: true, score: 0.5 }) as Record<string, unknown>
+    expect(out.time).toBe(1727568000000)
+    expect(out.ok).toBe(true)
+    expect(out.score).toBe(0.5)
+  })
+  it('标识键保留：traceId / errorId / apiKey 不被数字串规则破坏', () => {
+    const traceId = '1234567890abcdef1234567890abcdef'
+    const out = maskDeep({
+      traceId,
+      apiKey: 'ak-01',
+      child: { errorId: 'abc123456789012' },
+    }) as Record<string, unknown>
+    expect(out.traceId).toBe(traceId)
+    expect(out.apiKey).toBe('ak-01')
+    expect((out.child as Record<string, unknown>).errorId).toBe('abc123456789012')
+  })
+  it('敏感值键整值遮蔽：{ pwd } 这类无文本特征的裸值靠键名识别', () => {
+    const out = maskDeep({ pwd: 'hunter2', Password: 'p@ss', note: 'keep me' }) as Record<
+      string,
+      unknown
+    >
+    expect(out.pwd).toBe('[credential]')
+    expect(out.Password).toBe('[credential]')
+    expect(out.note).toBe('keep me')
+    // 数值/布尔不受键名影响（walk 只对字符串做键名遮蔽）
+    const mixed = maskDeep({ token: 123, pass: false }) as Record<string, unknown>
+    expect(mixed.token).toBe(123)
+    expect(mixed.pass).toBe(false)
+  })
+  it('幂等：已脱敏结构再走一遍结果不变（出口与入口双层调用安全）', () => {
+    const once = maskDeep({ a: '13812345678', note: 'token=abc' }) as Record<string, unknown>
+    const twice = maskDeep(once) as Record<string, unknown>
+    expect(twice).toEqual(once)
+  })
+  it('先 mask 后截断：超限字符串截断到 maxString 且不漏原值', () => {
+    const long = 'token=' + 'a'.repeat(5000)
+    const out = maskDeep({ v: long }, { maxString: 100 }) as Record<string, string>
+    expect(out.v.length).toBeLessThanOrEqual(120)
+    expect(out.v).toContain('[credential]')
+    expect(out.v).not.toContain('a'.repeat(5000))
+  })
+  it('不改变入参对象（缓冲中的载荷可复用重建信封）', () => {
+    const input = { props: { phone: '13812345678' } }
+    maskDeep(input)
+    expect((input.props as Record<string, unknown>).phone).toBe('13812345678')
+  })
+  it('深度与容量上限（防超深/超宽结构拖垮出口）', () => {
+    const deep = { a: { b: { c: { d: { e: '13812345678' } } } } }
+    expect(JSON.stringify(maskDeep(deep, { maxDepth: 3 }))).toContain('[truncated]')
+    expect(maskDeep({ arr: [1, 2, 3, 4, 5] }, { maxArray: 2 })).toEqual({ arr: [1, 2] })
   })
 })
 

@@ -6,11 +6,15 @@
  *  1. kind 归一（error/perf/replay，判别联合在协议 schema 已保证形状）；
  *  2. 字段白名单（协议 zod 校验已拦截未知形状，此处做落库投影）；
  *  3. 二次截断兜底（SDK 版本旧/未截断场景：message 1KB / 堆栈 32KB / 面包屑 512B×50）；
- *  4. 服务端 fingerprint：type + message + 堆栈首帧位置——分析精度高于
+ *  4. 二次脱敏兜底（SPEC §3.4 独立防线）：不信任 SDK 出口——旧版本/被绕过的敏感值
+ *     在落库前统一遮蔽，Memory 与 ClickHouse 两种存储同吃本函数输出，一处兜底双端生效；
+ *  5. 服务端 fingerprint：type + message + 堆栈首帧位置——分析精度高于
  *     SDK 的 message 级 errorId（流量侧粗、分析侧细，两层分工）。
+ *     注意脱敏先于指纹：分组基于脱敏后文本，同一错误跨 SDK 版本分组稳定。
  */
 import type { TransportEnvelope, ErrorEvent, StackFrame } from '@simple-monitor/protocol'
 import { LIMITS } from '@simple-monitor/protocol'
+import { mask, maskDeep, stripUrlQuery } from '@simple-monitor/utils'
 
 /** 落库事件（存储契约的输入形状，与 ClickHouse events 表一一对应） */
 export interface NormalizedEvent {
@@ -75,6 +79,17 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) : text
 }
 
+/** 面包屑 data 的二次脱敏（与 SDK 出口同一策略，面包屑专属截断口径） */
+function sanitizeBreadcrumbData(data: unknown): unknown {
+  if (data === null || data === undefined) return undefined
+  return maskDeep(data, {
+    maxString: LIMITS.breadcrumbData,
+    maxDepth: 3,
+    maxArray: 20,
+    maxKeys: 32,
+  })
+}
+
 /** FNV-1a 32 位 → hex（比 SDK 的 java hashCode 冲突率低一个量级） */
 export function fingerprintHash(input: string): string {
   let hash = 0x811c9dc5
@@ -108,13 +123,25 @@ export function normalizeEnvelope(envelope: TransportEnvelope): NormalizeResult 
       sdkVersion: envelope.auth.sdk.version,
       sessionId: envelope.session.sessionId,
       trackerId: envelope.session.trackerId,
-      page: envelope.context.page,
+      page: stripUrlQuery(envelope.context.page),
       viewId: undefined, // 事件级 viewId 在分支内覆盖
       device: envelope.context.device ?? {},
     }
 
     if (event.kind === 'error') {
-      const message = truncate(event.error.message || '(empty)', MESSAGE_MAX)
+      // 二次脱敏先于指纹：分组基于脱敏后文本，跨 SDK 版本（出口脱敏与否）分组稳定
+      const message = truncate(mask(event.error.message || '(empty)'), MESSAGE_MAX)
+      const stackFrames: StackFrame[] = (event.error.stackFrames ?? [])
+        .slice(0, STACK_FRAMES_MAX)
+        .map((f) => ({
+          ...f,
+          url: typeof f.url === 'string' ? mask(f.url) : f.url,
+          func: typeof f.func === 'string' ? mask(f.func) : f.func,
+        }))
+      const fingerprintSource = { ...event.error, message, stackFrames }
+      const http = event.error.http
+        ? (maskDeep(event.error.http) as NonNullable<ErrorEvent['error']['http']>)
+        : undefined
       events.push({
         ...base,
         viewId: event.error.viewId ?? base.viewId,
@@ -123,39 +150,49 @@ export function normalizeEnvelope(envelope: TransportEnvelope): NormalizeResult 
         ts: new Date(event.error.time ?? envelope.sentAt),
         error: {
           message,
-          name: event.error.name,
+          name: event.error.name ? mask(event.error.name) : undefined,
           level: event.error.level,
           errorId: event.error.errorId,
-          fingerprint: computeFingerprint(event.error),
-          componentName: event.error.componentName,
-          stackFrames: (event.error.stackFrames ?? []).slice(0, STACK_FRAMES_MAX),
-          http: event.error.http,
+          fingerprint: computeFingerprint(fingerprintSource),
+          componentName: event.error.componentName ? mask(event.error.componentName) : undefined,
+          stackFrames,
+          http,
         },
-        breadcrumbs: (event.breadcrumbs ?? []).slice(0, BREADCRUMBS_MAX),
+        breadcrumbs: (event.breadcrumbs ?? []).slice(0, BREADCRUMBS_MAX).map((c) => ({
+          type: mask(c.type),
+          category: c.category ? mask(c.category) : undefined,
+          data: sanitizeBreadcrumbData(c.data),
+          level: c.level ? mask(c.level) : undefined,
+          time: c.time,
+        })),
       })
     } else if (event.kind === 'behavior') {
-      // 行为域（M7 ADR-8）：PV/停留/曝光/埋点 白名单入库
+      // 行为域（M7 ADR-8）：PV/停留/曝光/埋点 白名单入库；PV url 剥 query 后整体二次脱敏
       const b = event.behavior
+      const cleaned = b.behaviorType === 'page_view' ? { ...b, url: stripUrlQuery(b.url) } : b
       events.push({
         ...base,
         viewId: base.viewId,
         kind: 'behavior',
         type: b.behaviorType,
         ts: new Date(envelope.sentAt),
-        behavior: b as unknown as Record<string, unknown>,
+        behavior: maskDeep(cleaned) as unknown as Record<string, unknown>,
       })
     } else if (event.kind === 'api') {
-      // 成功请求明细（M7 ADR-8 kind api）
+      // 成功请求明细（M7 ADR-8 kind api）：url 剥 query（聚合按路径语义）+ 整体二次脱敏
       events.push({
         ...base,
         kind: 'api',
         type: 'api',
         ts: new Date(envelope.sentAt),
-        api: { ...event.api } as unknown as Record<string, unknown>,
+        api: maskDeep({ ...event.api, url: stripUrlQuery(event.api.url) }) as unknown as Record<
+          string,
+          unknown
+        >,
       })
     } else if (event.kind === 'perf') {
       for (const metric of event.metrics) {
-        // perf 指标逐条落库（协议保证 value 为有限 number）
+        // perf 指标逐条落库（协议保证 value 为有限 number）；detail 富信息二次脱敏
         events.push({
           ...base,
           kind: 'perf',
@@ -166,7 +203,9 @@ export function normalizeEnvelope(envelope: TransportEnvelope): NormalizeResult 
               name: metric.name,
               value: metric.value,
               score: metric.score,
-              detail: metric.detail,
+              detail: metric.detail
+                ? (maskDeep(metric.detail) as Record<string, unknown>)
+                : undefined,
             },
           ],
         })

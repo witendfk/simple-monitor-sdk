@@ -11,7 +11,7 @@
 | 里程碑       | M0-M7 基础能力已落地，§3.3 记录对码评审的未闭合缺口；体积预算脚本尚未接入 CI；下一站 M7.5 存储与权限架构；手动 API/错误过滤/consent 已定档「M8 前小切片」 |
 | 测试         | 最近记录为 239 tests；CI 当前执行 typecheck×3 / lint / build / test / conformance，尚无 size 步骤        |
 | 需求基线     | [PRD](../PRD.md) v1.0.0；Web 核心产品为当前交付线，AI 与小程序不阻塞首发                                 |
-| 开放 P0      | 权限分离（§3.2，既有）+ 行为/API 隐私旁路与服务端脱敏缺口（§3.3，本次评审核实）                          |
+| 开放 P0      | 权限分离（§3.2，既有）——行为/API 隐私旁路与服务端二次脱敏已随 2026-10-10 批次闭合                        |
 | npm 发布     | 搁置（注册被反滥用拦截，找他人账号；流程就绪见 PUBLISH.md）                                              |
 | 基础设施验证 | 真实 Redis/ClickHouse 联调、k6 压测实测待 docker 环境（已提级为 M7.5 P1 前置，见 §3.1）                  |
 
@@ -53,7 +53,7 @@
 
 按产品目标记录实现偏差；优先级表示对隐私、数据可信度和宿主稳定性的影响，不表示当前要立即对外部署。以下每项修复后按 [ARCHITECTURE §7.3](../ARCHITECTURE.md) 复审并同步 PRD/SPEC 状态。
 
-- [ ] **P0 信封隐私出口与服务端二次防线**：`packages/core/src/behaviorEnvelope.ts:40` 原样装载事件；`packages/browser/src/behaviors.ts:80` 的 PV URL、`packages/browser/src/behaviors.ts:141` 的声明式 props、`packages/browser/src/handleEvents.ts:160` 的成功 API URL 可直接外发；`packages/core/src/envelope.ts:189` 的性能 detail 也未深层脱敏；`apps/server/src/ingest/normalize.ts:136` 未二次脱敏。统一在主信封和行为/API 信封出口对嵌套字符串 mask + 截断，并在 ingest 独立兜底。验收：手机号、JWT、带 token 的 URL 分别经 `track`、`data-track-props`、PV、成功 API、性能 detail 上报，网络载荷、IndexedDB 和两种存储中均无原值；服务端直接接收含敏感值的合法信封也不落原值
+- [ ] **P0 信封隐私出口与服务端二次防线** → **[x] 2026-10-10 完成**：utils 新增 `maskDeep`（嵌套出口脱敏：标识键/数值/布尔保留防误伤、敏感键名整值遮蔽、先 mask 后截断、幂等）与 `stripUrlQuery`；行为/API 信封出口 `sanitizeEgress`（PV/成功 API URL 剥 query、埋点 props 深度脱敏）+ 主信封 `buildEnvelope` 出口 maskDeep 兜底（perf detail / error 旁路字段，error.http.url 保持「遮蔽凭证、保留 query」原设计）；ingest 二次脱敏**先于指纹**（message/堆栈帧/面包屑/http/behavior/api/perf detail 全字段，跨 SDK 版本分组稳定），面包屑 512B、http 2KB 截断对齐 LIMITS。验收通过：手机号/JWT/带 token URL 经 track、data-track-props、PV、成功 API、性能 detail 上报后，网络载荷（BatchSender/IndexedDB 缓存同吃出口产物）与两种存储均无原值；服务端直收未脱敏合法信封不落原值。258 测试（新增 19 条隐私回归）+ 三段门禁绿。遗留：声明式采集端 LIMITS（本清单 P2）、服务端 stack 总量截断（SPEC §3.3 偏差列）
 - [ ] **P1 行为通道离场发送**：`packages/core/src/behavior.ts:101` 的 `flushLeaving()` 为空，独立发送器没有离场生命周期；`packages/browser/src/behaviors.ts:114` 的 pagehide dwell 入队后仍等待定时器，hidden 后延迟 pagehide 还可能把后台时间算作停留。接通 hidden/pagehide 与 visible/pageshow 状态切换，只在可见时结算 dwell，结算后同步 flush。验收：页面运行不足 5 秒即关闭，PV、track、成功 API 与达到阈值的 dwell 各进入 beacon 一次；hidden 多秒后 pagehide 不新增后台停留；恢复可见后继续发送且不重复结算
 - [ ] **P1 CH 行为/API 明细完整性**：`apps/server/src/storage/clickhouse.storage.ts:13` 的 EventRow 与 `docker/clickhouse/init.sql:3` 无 behavior/api 明细列，`recentBehaviors()` 只读通用列。可先补当前宽表列，再随 M7.5 P2 分表；M8/M9 查询依赖此数据。验收：相同 PV 来源、track 属性及 API method/url/status/duration 写入两种存储后，明细查询一致
 - [ ] **P1 beacon 大信封拆批**：`packages/core/src/batchSender.ts:184` 每段都从事件数组起点截取，后续事件丢失且首段重复；当前按 UTF-16 长度而非 UTF-8 字节判 64KB；部分分片失败时会缓存整包，重放已被接受的分片。按实际事件偏移与字节预算拆分，逐片记录结果。验收：多个不同事件组成 >64KB 信封，全部 beacon 合并后每个事件恰好出现一次，单片字节数不超上限；模拟前片成功后片失败，仅失败片入缓存
