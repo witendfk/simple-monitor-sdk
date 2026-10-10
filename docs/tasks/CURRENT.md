@@ -1,6 +1,6 @@
 # 当前任务与进度（tasks/CURRENT）
 
-> 最后更新: 2026-10-10（文档体系重组：PRD/SPEC/ARCHITECTURE/DESIGN 四件套落地，总纲退役归档为 [LEDGER.md](./LEDGER.md)）
+> 最后更新: 2026-10-10（文档评审批次：告警/SourceMap 补 ⚠️ 重启不持久、PRD 新增数据保留条目、SPEC LIMITS 拆规格/现状两列、docker 联调环境提级为 M7.5 P1 前置、手动 API/过滤/consent 定档「M8 前小切片」。前情：四件套重组，总纲退役归档为 [LEDGER.md](./LEDGER.md)）
 >
 > 状态说明：`[ ]` 待开始 ｜ `[~]` 进行中 ｜ `[x]` 已完成（含验收记录）｜ `[-]` 搁置/取消。**完成任何条目：勾销 + 回填实际结果；新问题一律先写验收条件再动手**（SOP 见 [ARCHITECTURE §7.3](../ARCHITECTURE.md)）。
 
@@ -8,12 +8,12 @@
 
 | 维度         | 状态                                                                                                     |
 | ------------ | -------------------------------------------------------------------------------------------------------- |
-| 里程碑       | M0-M7 基础能力已落地，§3.3 记录对码评审的未闭合缺口；体积预算脚本尚未接入 CI；下一站 M7.5 存储与权限架构 |
+| 里程碑       | M0-M7 基础能力已落地，§3.3 记录对码评审的未闭合缺口；体积预算脚本尚未接入 CI；下一站 M7.5 存储与权限架构；手动 API/错误过滤/consent 已定档「M8 前小切片」 |
 | 测试         | 最近记录为 239 tests；CI 当前执行 typecheck×3 / lint / build / test / conformance，尚无 size 步骤        |
 | 需求基线     | [PRD](../PRD.md) v1.0.0；Web 核心产品为当前交付线，AI 与小程序不阻塞首发                                 |
 | 开放 P0      | 权限分离（§3.2，既有）+ 行为/API 隐私旁路与服务端脱敏缺口（§3.3，本次评审核实）                          |
 | npm 发布     | 搁置（注册被反滥用拦截，找他人账号；流程就绪见 PUBLISH.md）                                              |
-| 基础设施验证 | 真实 Redis/ClickHouse 联调、k6 压测实测待 docker 环境                                                    |
+| 基础设施验证 | 真实 Redis/ClickHouse 联调、k6 压测实测待 docker 环境（已提级为 M7.5 P1 前置，见 §3.1）                  |
 
 ## 2. 已完成里程碑（M0-M7，详情见 [LEDGER.md](./LEDGER.md) 附录 B）
 
@@ -34,6 +34,7 @@
 
 ### 3.1 [ ] M7.5 生产级存储架构（ADR-4 落地，设计见 [ARCHITECTURE §3.2](../ARCHITECTURE.md)）
 
+- [ ] **P1 前置：联调环境立起**：docker-compose 起真实 Redis / ClickHouse / Postgres（原 §4.3「M4 遗留验证」提级——P1/P2 的验收条件均依赖此环境，环境未立不动 P1）。验收：三容器健康检查通过，server 以 `NODE_STORAGE=infra` 起动后全链路冒烟绿
 - [ ] **P1 Postgres 元数据**：projects 双密钥 / users / members / issues 状态机（fingerprint UNIQUE + first_seen/last_seen/event_count）/ alert_rules+history / releases / sourcemap_artifacts 全量 DDL，替换内存实现。验收：docker-compose 起库后全链路回归绿；CH 写入与 PG Issue 更新任一步失败时可重放或对账，不永久错计
 - [ ] **P2 CH 按 kind 分表**：error_events（含 resource_kind）/ perf_events / behavior_events / api_events 四表 + 各自物化视图，替代单宽表；须完整保留行为事件名/属性/PV 来源与成功 API 请求明细，不能沿用现有宽表只存通用列的缺口。验收：k6 冒烟 + 相同数据在 Memory/CH 的明细与聚合查询一致
 - [ ] **P3 权限分离**（= 下文 3.2，P0 消零）
@@ -64,7 +65,7 @@
 
 ### 4.1 DoD 缺口（2026-10-10 对码核实，PRD 标 🚧）
 
-- [ ] 手动 API：`captureException` / `captureMessage` / `setUser` / `setTag`（里程碑未排，建议随 M8 前小切片）
+- [ ] 手动 API：`captureException` / `captureMessage` / `setUser` / `setTag`（已定档「M8 前小切片」，PRD §8 已映射）
 - [ ] 标准错误过滤：`ignoreErrors` / `allowUrls` / `denyUrls`（同上）
 - [ ] consent mode：未同意只采集错误不采集行为（同上）
 
@@ -77,7 +78,6 @@
 
 ### 4.3 遗留验证与工程项
 
-- [ ] 真实 Redis / ClickHouse / Postgres 联调 + 生产配置验收（M4 遗留，待 docker）
 - [ ] `pnpm size` 接入 CI 构建后步骤，超预算阻断合并（M7 遗留）
 - [ ] `pnpm lint:ci` 当前 167 warnings，恰达 167 上限；按批消减存量并同步下调 `--max-warnings`，验收为下一批 warning 数与上限均低于 167
 - [ ] k6 压测实测：接入层 5k events/s 单机稳定（脚本见 `apps/server/k6/report.js`）

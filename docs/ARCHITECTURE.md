@@ -137,7 +137,7 @@ Vite + React + ECharts 自建（ADR-5）。现有视图：概览（统计卡 + T
 
 ### 7.4 写作纪律
 
-已实现能力须有验证依据；规划设计显式标 🚧（如 ADR-10 多端支持）。产品承诺归 PRD，wire 格式以 `packages/protocol` schema 为准并由 SPEC 解释，现状与目标拓扑归本文，取舍理由归 DESIGN，进度只在 CURRENT 维护；历史问题与执行记录冻结于 [tasks/LEDGER.md](./tasks/LEDGER.md)。面向使用者的接入指南待项目落地后补，不复制四件套内容。
+已实现能力须有验证依据；规划设计显式标 🚧（如 ADR-10 多端支持），🚧 条目的说明列第一句先写现状偏差（指到 CURRENT），再写目标语义，避免扫读误读为已实现。产品承诺归 PRD，wire 格式以 `packages/protocol` schema 为准并由 SPEC 解释，现状与目标拓扑归本文，取舍理由归 DESIGN，进度只在 CURRENT 维护；历史问题与执行记录冻结于 [tasks/LEDGER.md](./tasks/LEDGER.md)。面向使用者的接入指南待项目落地后补，不复制四件套内容。
 
 ## 8. 架构演进路线
 

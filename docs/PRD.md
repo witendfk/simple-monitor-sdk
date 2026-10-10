@@ -4,7 +4,7 @@
 >
 > **文档层级：PRD（做什么）→ [SPEC](./SPEC.md)（契约）→ [ARCHITECTURE](./ARCHITECTURE.md)（拓扑）→ [DESIGN](./DESIGN.md)（为什么）→ [tasks/CURRENT](./tasks/CURRENT.md)（进度）**
 >
-> 状态标注：✅ 已实现并验证（有回归测试或验证记录）｜ 🚧 规划中或已发现偏差待修复（详情见 CURRENT）｜ ✂️ 明确不做 ｜ ⚠️ 代码已落地、依赖真实环境验证（docker/npm）。具体完成进度只在 [CURRENT](./tasks/CURRENT.md) 维护。
+> 状态标注：✅ 已实现并验证（有回归测试或验证记录）｜ 🚧 规划中或已发现偏差待修复（详情见 CURRENT）｜ ✂️ 明确不做 ｜ ⚠️ 代码已落地、有已知运行边界——依赖真实环境验证（docker/npm）或持久化等边界随里程碑收口（以格内说明为准）。具体完成进度只在 [CURRENT](./tasks/CURRENT.md) 维护。
 
 ## 1. 项目背景与定位
 
@@ -71,9 +71,9 @@
 | **白屏检测**           | load 后 16 点视口采样（elementsFromPoint），命中全空判定白屏 → 独立错误事件                                                 | ✅                            |
 | **指纹与去重**         | SDK 侧 message 级 errorId 流量去重；服务端 fingerprint（type+message+堆栈首帧 url:line:col）分组，流量粗/分析细             | ✅                            |
 | **错误分组与发版回归** | 服务端按 fingerprint 聚合 count/firstSeen/lastSeen、记录 releases；按 release 过滤与 isNewInRelease 徽标尚未在查询 API 生效 | ✅ 分组；🚧 M8 发版过滤与徽标 |
-| **SourceMap 符号化**   | 构建后 CLI 上传（release+URL 精确/后缀匹配），错误堆栈还原为源码位置                                                        | ✅                            |
-| **手动上报 API**       | captureException / captureMessage                                                                                           | 🚧（DoD 未落地，里程碑待排）  |
-| **错误过滤标准项**     | ignoreErrors / allowUrls / denyUrls                                                                                         | 🚧（同上）                    |
+| **SourceMap 符号化**   | 构建后 CLI 上传（release+URL 精确/后缀匹配），错误堆栈还原为源码位置                                                        | ✅ ⚠️ 工件内存态、重启丢失（M7.5 P1 收口） |
+| **手动上报 API**       | captureException / captureMessage                                                                                           | 🚧（M8 前小切片）             |
+| **错误过滤标准项**     | ignoreErrors / allowUrls / denyUrls                                                                                         | 🚧（M8 前小切片）             |
 
 ### 3.3 API 监控
 
@@ -120,7 +120,7 @@
 | **自定义日志** | log() 分级日志上报                                 | ✅                           |
 | **自定义事件** | track(name, props)                                 | ✅                           |
 | **自定义测速** | time(name)，duration 非有限数/负数/超 24h 静默丢弃 | ✅                           |
-| **用户与标签** | setUser / setTag 全局属性自动附加                  | 🚧（DoD 未落地，里程碑待排） |
+| **用户与标签** | setUser / setTag 全局属性自动附加                  | 🚧（M8 前小切片）            |
 
 ### 3.7 行为埋点
 
@@ -132,7 +132,7 @@
 | **声明式埋点**    | data-track（点击 + form submit capture 委托）/ data-expose（曝光）                                                                                      | ✅                                                 |
 | **曝光有效性**    | IntersectionObserver + 停留 ≥500ms + 同 selector 1s 节流 + 每 view 去重                                                                                 | ✅                                                 |
 | **按域采样**      | 错误 100% 不采样；行为 trackSampleRate / 成功请求 apiSampleRate 独立配置                                                                                | ✅                                                 |
-| **防风暴 LIMITS** | name ≤128 / props ≤2KB 且键数 ≤32；单会话行为采集预算 500 条，到限丢新事件；待发送缓冲超限丢最旧；成功 API 不占行为预算，仍受独立采样与发送缓冲上限约束 | ✅ 代码埋点部分限制；🚧 声明式属性与行为预算对齐   |
+| **防风暴 LIMITS** | 现状：成功 API 仍计入行为预算、声明式属性未限制（偏差见 CURRENT §3.3 P2）。目标：name ≤128 / props ≤2KB 且键数 ≤32；单会话行为采集预算 500 条，到限丢新事件；待发送缓冲超限丢最旧；成功 API 不占行为预算，只受独立采样与发送缓冲上限约束 | ✅ 代码埋点部分限制；🚧 声明式属性与行为预算对齐   |
 | **旧端兼容**      | 行为/api 固定独立信封组，旧服务端 4xx 只丢行为组，错误/性能主通道不受影响                                                                               | ✅                                                 |
 | **埋点分析**      | 事件浏览器 / 漏斗（windowFunnel）/ N 日留存（retention，按 trackerId）                                                                                  | 🚧 M9                                              |
 | **可视化圈选**    | 运营圈选配置埋点                                                                                                                                        | ✂️ 明确不做（选择器管理 + DOM 脆弱性成本远超收益） |
@@ -162,7 +162,7 @@
 | **截断上限**     | message 1KB / stack 32KB / body 2KB / 面包屑每条 512B 且 ≤50 条 / track props 2KB；两端对齐（protocol LIMITS）       | ✅ SDK 主通道部分字段；🚧 声明式属性及服务端全字段兜底 |
 | **URL 过滤**     | filterXhrUrlRegExp 命中完全不监控                                                                                    | ✅                                                     |
 | **开关**         | enablePrivacyMask 默认开（全局底线不随实例）                                                                         | ✅                                                     |
-| **Consent mode** | 未同意只采集错误不采集行为                                                                                           | 🚧（DoD 未落地，里程碑待排）                           |
+| **Consent mode** | 未同意只采集错误不采集行为                                                                                           | 🚧（M8 前小切片）                                      |
 
 ### 3.10 多端支持（小程序）
 
@@ -218,7 +218,7 @@
 | **规则类型**     | error_spike 突增（近 15min > max(20, 前 6h 均值×3)）/ perf_threshold 阈值（如 LCP P75 > 4000ms 持续 2 桶） | ✅   |
 | **防轰炸**       | 15min 冷却；投递失败不进冷却，下轮重试                                                                     | ✅   |
 | **webhook 安全** | SSRF 双道防护：字面值 net.BlockList（私网/保留段）+ 发送前 DNS 解析复核 + 重定向逐跳复核（≤3 跳）          | ✅   |
-| **规则管理**     | CRUD API + 触发记录 + 看板管理视图                                                                         | ✅   |
+| **规则管理**     | CRUD API + 触发记录 + 看板管理视图                                                                         | ✅ ⚠️ 规则与触发记录内存态、重启丢失（M7.5 P1 收口） |
 
 ### 4.5 AI 诊断（ADR-9）
 
@@ -254,6 +254,7 @@
 | **SSR 安全**       | 无 window 环境不崩溃（isSupported 守卫、门面只绑配置）                                                                                    | ✅                                       |
 | **多实例**         | 一页一 client（页面级 instrumentation 单例）；destroy 后同页重建不支持（明示边界，重置请刷新）                                            | ✅                                       |
 | **平台范围**       | Web（含 SPA）；小程序按 ADR-10 两步走（原生 wx → uniapp mp 目标）                                                                         | ✅ Web；🚧 M11/M12                       |
+| **数据保留期限**   | 事件明细保留期限须为产品口径并写入接入文档：当前 ClickHouse 形态 TTL 30 天（Memory 形态随内存上限淘汰）；M7.5 分表目标 90 天，届时定稿可配置策略 | 🚧 M7.5                                  |
 
 ## 6. 监控看板需求（ADR-5：自建 React + ECharts）
 
@@ -305,6 +306,7 @@
 | M6 告警/发布        | §4.4 告警引擎、发布流程                                                  | ✅ ⚠️（npm 搁置）                          |
 | M7 行为域埋点       | §3.7 已落地项 + §3.3 成功请求上报 + 防风暴 + 体积预算脚本；CI 门禁待接入 | ✅ 基础采集；🚧 行为预算/明细及 CI 门禁    |
 | M7.5 生产级存储架构 | §4.2 分表/元数据、§4.6 权限分离（P0）、§4.1 gateway 加固、§6 看板对齐    | 🚧                                         |
+| M8 前小切片（SDK API 收口） | §3.2 手动上报 API + 错误过滤标准项、§3.6 用户与标签、§3.9 consent mode（清单见 CURRENT §4.1） | 🚧 |
 | M8 看板横切与访问域 | §3.4/§3.5/§3.3 查询分析、§4.3 横切过滤、§6 对应视图                      | 🚧                                         |
 | M9 埋点分析域       | §3.7 事件浏览器/漏斗/留存                                                | 🚧                                         |
 | M10 AI 诊断         | §4.5 全部                                                                | 🚧                                         |
