@@ -67,6 +67,18 @@ export class BehaviorTracker {
         return { dsn: payloads[0].dsn, envelope }
       },
     })
+    // 离场生命周期（与 transportData 主通道同语义，§3.3 P1）：hidden/pagehide →
+    // 立即 beacon 排空缓冲（此前无绑定，缓冲事件在关页时随 5s 定时器一起丢失）；
+    // visible/pageshow → 恢复缓冲。监听器随实例存续，不做移除（一页一 client，
+    // destroy 后同页重建不支持——与主通道边界声明一致）。
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      window.addEventListener('pagehide', () => this.sender.markLeaving())
+      window.addEventListener('pageshow', () => this.sender.markActive())
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') this.sender.markLeaving()
+        else this.sender.markActive()
+      })
+    }
   }
 
   /** 入队一条 behavior 事件（按域采样 + 防风暴） */
@@ -98,9 +110,13 @@ export class BehaviorTracker {
     return this.sender.bufferedCount
   }
 
-  /** 离场立即 flush（通道状态机 leaving 由 BatchSender 自理） */
-  flushLeaving(payloads?: Array<{ dsn: string; data: unknown }>): void {
-    void payloads
+  /** 离场状态切换入口（测试用）：直接驱动内部 BatchSender 的通道状态机 */
+  markLeaving(): void {
+    this.sender.markLeaving()
+  }
+
+  markActive(): void {
+    this.sender.markActive()
   }
 
   destroy(): void {

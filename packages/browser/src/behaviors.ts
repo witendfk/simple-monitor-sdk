@@ -22,6 +22,7 @@ const exposed = new Set<string>()
 const exposeThrottle = new Map<string, number>()
 let dwellStart = 0
 let dwellAccumulated = 0
+let dwellHidden = false
 let initialized = false
 
 function pageUrl(): string {
@@ -90,30 +91,19 @@ export function trackPageView(
   })
 }
 
-/** 停留时长：visibilitychange 累计可见时间；hidden 时结算上报（不含后台时间） */
+/**
+ * 停留时长：visibilitychange 累计可见时间，hidden/pagehide 结算（§3.3 P1）。
+ * 只在可见期计时：hidden 后 pagehide 不再追加后台时间；同一段可见时长只结算一次
+ * （hidden 已结算后，pagehide 贡献 0ms，不再产生第二条 dwell）。
+ */
 function setupDwell(client: MonitorClient): void {
   dwellStart = Date.now()
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      const now = Date.now()
-      const activeMs = dwellAccumulated + (now - dwellStart)
-      dwellAccumulated = 0
-      dwellStart = now
-      if (activeMs >= 1000) {
-        client.behavior.sendBehavior({
-          behaviorType: 'page_dwell',
-          activeMs,
-          startTime: now - activeMs,
-          endTime: now,
-        })
-      }
-    } else {
-      dwellStart = Date.now()
-    }
-  })
-  window.addEventListener('pagehide', () => {
-    const now = Date.now()
-    const activeMs = dwellAccumulated + (now - dwellStart)
+  // countSegment：本次结算是否计入「dwellStart → now」段。hidden 转换时结算的是
+  // 刚结束的可见段（计入）；hidden 期 pagehide 的段是后台时间（不计入）。
+  const settle = (now: number, countSegment: boolean): void => {
+    const activeMs = dwellAccumulated + (countSegment ? now - dwellStart : 0)
+    dwellAccumulated = 0
+    dwellStart = now
     if (activeMs >= 1000) {
       client.behavior.sendBehavior({
         behaviorType: 'page_dwell',
@@ -122,6 +112,20 @@ function setupDwell(client: MonitorClient): void {
         endTime: now,
       })
     }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      dwellHidden = true
+      settle(Date.now(), true)
+    } else {
+      dwellHidden = false
+      dwellStart = Date.now()
+    }
+  })
+  window.addEventListener('pagehide', () => {
+    // 现代浏览器关页前必先 hidden（彼时已结算，此处贡献 0ms——后台停留不计入）；
+    // 兜底可见期直接关闭的路径（dwellHidden=false，结算可见段）。离场 flush 由行为通道生命周期负责。
+    settle(Date.now(), !dwellHidden)
   })
 }
 
