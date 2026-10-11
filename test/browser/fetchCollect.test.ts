@@ -77,4 +77,47 @@ describe('fetch 采集（window.fetch 先 stub 后 init）', () => {
     expect(sendSpy).not.toHaveBeenCalled()
     expect(client.breadcrumb.getStack().some((b) => b.type === BreadCrumbTypes.FETCH)).toBe(true)
   })
+
+  it('无 Content-Length 的大响应：有界采样 ≤2048 字符，业务仍完整消费（§3.3 P1）', async () => {
+    const chunk = 'x'.repeat(300_000)
+    const stream = new ReadableStream({
+      start(controller) {
+        for (let i = 0; i < 30; i++) controller.enqueue(new TextEncoder().encode(chunk))
+        controller.close()
+      },
+    })
+    stubFetch.mockReturnValueOnce(Promise.resolve(new Response(stream)))
+    const biz = await window.fetch('http://api.example.com/chunked')
+    const full = await biz.text() // 业务侧完整读取不受采样影响
+    expect(full.length).toBe(300_000 * 30)
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(sendSpy).not.toHaveBeenCalled()
+    const crumb = client.breadcrumb.getStack().find((b) => b.type === BreadCrumbTypes.FETCH)
+    expect(crumb).toBeTruthy()
+    expect(JSON.stringify(crumb?.data ?? '').length).toBeLessThan(3000)
+  })
+
+  it('无界持续流（不来 done）：采样后即断开产出面包屑（旧实现 text() 永挂起），原流仍可续读', async () => {
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined
+    const stream = new ReadableStream({
+      start(c) {
+        controller = c
+        c.enqueue(new TextEncoder().encode('hello-stream-'.repeat(400)))
+      }, // 不 close：模拟持续推送的文本响应
+    })
+    stubFetch.mockReturnValueOnce(Promise.resolve(new Response(stream)))
+    const biz = await window.fetch('http://api.example.com/never-ending')
+    expect(biz.status).toBe(200)
+    await new Promise((r) => setTimeout(r, 20))
+
+    const crumb = client.breadcrumb.getStack().find((b) => b.type === BreadCrumbTypes.FETCH)
+    expect(crumb).toBeTruthy() // 旧实现此处拿不到：clone().text() 对不结束的流永不 resolve
+    expect(JSON.stringify(crumb?.data ?? '').length).toBeLessThan(2600)
+
+    // 采样只断开克隆流：原流仍可继续读取
+    controller!.enqueue(new TextEncoder().encode('-more'))
+    controller!.close()
+    expect(await biz.text()).toContain('more')
+  })
 })

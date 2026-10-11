@@ -11,6 +11,7 @@ import type { INestApplication } from '@nestjs/common'
 import { PROTOCOL_VERSION, type TransportEnvelope } from '@simple-monitor/protocol'
 import { AppModule } from '../src/app.module'
 import { CONFIG_TOKEN } from '../src/config'
+import { gunzipBody } from '../src/report/gunzip-body.middleware'
 import { IngestService } from '../src/ingest/ingest.service'
 
 interface ErrorGroupSummary {
@@ -65,6 +66,7 @@ describe('server e2e（内存全链路）', () => {
       })
       .compile()
     app = moduleRef.createNestApplication()
+    app.use(gunzipBody)
     app.use(expressJsonForTest())
     await app.init()
     // main.ts bootstrap 同款：启动消费循环（内存队列 50ms 泵）
@@ -141,6 +143,18 @@ describe('server e2e（内存全链路）', () => {
       .set('Content-Encoding', 'gzip')
       .send(gz)
     expect(res.status).toBe(204)
+  })
+
+  it('高压缩比 gzip：输入 ~4KB 在 1MB 内、解压 4MB 超 2MB 上限 → 413（§3.3 P1 解压输出设限）', async () => {
+    const { gzipSync } = await import('node:zlib')
+    const bomb = gzipSync(Buffer.alloc(4 * 1024 * 1024, 0))
+    expect(bomb.length).toBeLessThan(1024 * 1024) // 输入在上限内：确认拦的是解压侧而非输入侧
+    const res = await request(server)
+      .post('/report/batch')
+      .set('Content-Type', 'application/gzip')
+      .send(bomb)
+    expect(res.status).toBe(413)
+    expect(res.body.error).toBe('decompressed body too large')
   })
 
   it('/api/** 无鉴权头 → 401（查询端点不再匿名可读）', async () => {

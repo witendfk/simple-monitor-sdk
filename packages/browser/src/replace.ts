@@ -264,7 +264,40 @@ export function fetchReplace(client: MonitorClient): void {
 /**
  * 按需读取响应体：二进制类型 / 超大响应直接跳过（记占位标记），
  * 其余 clone 后异步读取并截断——不阻塞业务消费原响应。
+ * 读取有界（§3.3 P1）：最多采样 SAMPLE_READ_MAX_BYTES 字节即断开克隆流，
+ * 无 Content-Length 的大型/持续流式响应不再把整个正文读进宿主内存
+ * （旧实现 clone().text() 全量读入，采集内存随正文线性增长）。
  */
+const SAMPLE_READ_MAX_BYTES = 4096
+
+async function readBoundedSample(res: Response, consume: (text: string) => void): Promise<void> {
+  const reader = res.clone().body?.getReader?.()
+  if (!reader) {
+    // 无 body 流可读的极端环境：退化全量读（此时不存在可增长的流）
+    consume(interceptStr(mask(await res.clone().text()), 2048))
+    return
+  }
+  const decoder = new TextDecoder('utf-8')
+  let sample = ''
+  let read = 0
+  while (read < SAMPLE_READ_MAX_BYTES && sample.length < 2048) {
+    const { done, value } = await reader.read()
+    if (done) break
+    read += value.byteLength
+    sample += decoder.decode(value, { stream: true })
+  }
+  // 立即断开克隆流；业务对原响应的消费不受 clone 取消影响。
+  // 不 await：undici 对未关闭流的克隆体 cancel() 永不 resolve，等待会挂起整条采集链
+  try {
+    void reader.cancel().catch(() => {
+      /* 流已关闭的竞态 */
+    })
+  } catch {
+    /* reader 不可用 */
+  }
+  consume(interceptStr(mask(sample), 2048))
+}
+
 function readResponseBody(res: Response, consume: (text: string) => void): void {
   try {
     const contentType = res.headers.get('content-type') || ''
@@ -277,13 +310,9 @@ function readResponseBody(res: Response, consume: (text: string) => void): void 
       consume('[skipped:binary-or-large]')
       return
     }
-    res
-      .clone()
-      .text()
-      .then((text: string) => consume(interceptStr(mask(text), 2048)))
-      .catch(() => {
-        /* body 已被业务消费/流错误：放弃采集 */
-      })
+    void readBoundedSample(res, consume).catch(() => {
+      /* body 已被业务消费/流错误：放弃采集 */
+    })
   } catch {
     /* headers 不可用等极端环境 */
   }
