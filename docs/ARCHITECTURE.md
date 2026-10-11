@@ -55,7 +55,7 @@ types / shared（契约） → utils（AOP replaceOld、微任务队列、mask �
 
 **性能**：PerformanceObserver（buffered + firstHiddenTime 过滤）→ web-performance MetricsStore → reportCallback（普通 rIC / 紧急同步）→ web 门面转 core 传输（不去重）。
 
-**行为**：browser 采集升格（PV/停留/曝光/data-track）+ core `track()/time()` → BehaviorTracker（按域采样 + 独立信封组）→ 独立于 error/perf 主通道发送。当前独立 BatchSender 未绑定 pagehide/hidden，`BehaviorTracker.flushLeaving()` 为空（修复项见 CURRENT）；行为/API 信封出口已接入与主通道同一套脱敏（PV/成功 API URL 剥 query + maskDeep，2026-10-10）。
+**行为**：browser 采集升格（PV/停留/曝光/data-track）+ core `track()/time()` → BehaviorTracker（按域采样 + 独立信封组 + 离场生命周期：hidden/pagehide → 立即 beacon 排空，visible/pageshow → 恢复缓冲）→ 独立于 error/perf 主通道发送。行为/API 信封出口与主通道同一套脱敏（PV/成功 API URL 剥 query + maskDeep）；成功 API 不占行为采集预算（2026-10-10）。
 
 ### 2.3 已验证的正确设计（重构/演进时保留）
 

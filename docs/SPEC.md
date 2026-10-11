@@ -35,7 +35,7 @@
 | HTTP 异常         | 4xx/5xx/status 0 走 `FETCH_ERROR`；2xx 只进面包屑；`filterXhrUrlRegExp` 命中完全不监控                                                               | ✅                                 |
 | 白屏              | load 后 16 点视口采样（elementsFromPoint），命中全空判定白屏 → 独立错误事件                                                                          | ✅                                 |
 | PV                | 首次加载（loadType: navigate/reload/back_forward）+ 路由变更；同 URL 连续去重；会话内仅首 PV 携带 `referrerHost` + `utm_source/medium/campaign`      | ✅                                 |
-| 停留时长          | `PAGE_DWELL`：visibilitychange 累计 + 离场期 flush                                                                                                   | ✅ 时长计算；🚧 行为通道离场 flush |
+| 停留时长          | `PAGE_DWELL`：visibilitychange 累计可见段 + 离场期 flush；hidden 期 pagehide 不计后台时间                                                            | ✅（含行为通道离场发送，2026-10-10） |
 | 曝光              | IntersectionObserver + 停留 ≥500ms 才有效；同 selector 1s 节流；每 view 去重                                                                         | ✅                                 |
 | 声明式埋点        | `data-track`（click + form submit capture 委托）、`data-expose`（曝光）                                                                              | ✅                                 |
 | Web Vitals        | FP/FCP/LCP/CLS/INP 自研，语义对齐官方库（oracle 偏差断言：LCP ±50ms / CLS ±0.02）；NT/RT/FPS；LongTask 三档分布（50-100/100-200/≥200ms）+ Top-N 归因 | ✅                                 |
@@ -100,16 +100,16 @@ zod schema 为单一事实来源，TS 类型由 zod 推导；SDK 发送端（生
 | HTTP reqData/responseText | 2048 个 UTF-16 字符                                                         | —                                       |
 | 面包屑单条                | data 序列化后 512 个 UTF-16 字符，≤50 条（钳制 [1,50]）                     | —                                       |
 | behavior name             | 128 字符                                                                    | —                                       |
-| trackProps                | 序列化 ≤2048B 且键数 ≤32；代码埋点与 `data-track-props` 同规则              | 声明式入口未限制（P2）                  |
-| 单会话 behavior 事件      | 采集预算 500 条（仅计行为事件，到限丢新）；待发送缓冲超限丢最旧             | 成功 API 计入同一预算，待拆分（P2）     |
-| 接入层 body               | JSON 256KB（/api/sourcemaps 独立 20MB）；gzip 压缩输入 1MB                  | gzip 解压输出无上限（P1 有界解析与采样）|
-| beacon 信封               | >64KB 按 UTF-8 字节拆批，每个事件恰好进入一个分片                           | 按 UTF-16 判长且分片偏移错误（P1 拆批） |
+| trackProps                | 序列化 ≤2048B 且键数 ≤32；代码埋点、声明式入口与 `data-track-props` 同规则  | —                                       |
+| 单会话 behavior 事件      | 采集预算 500 条（仅计行为事件，到限丢新）；待发送缓冲超限丢最旧             | —                                       |
+| 接入层 body               | JSON 256KB（/api/sourcemaps 独立 20MB）；gzip 压缩输入 1MB、解压输出 2MB    | —                                       |
+| beacon 信封               | >64KB 按 UTF-8 字节拆批，每个事件恰好进入一个分片                           | —                                       |
 
 ### 3.4 三份规格
 
 1. **指纹分工**：SDK errorId = message 级 hash（流量去重，`maxDuplicateCount` 兜底）；服务端 fingerprint = (type + message + 堆栈首帧 url:line:col) hash。流量侧粗、分析侧细。
 2. **采样**：错误 100% 不采样；perf 按 `sampleRate`、行为按 `trackSampleRate`、成功请求按 `apiSampleRate`（默认 0.1）在采集层过滤（省流量也省内存）。
-3. **隐私目标**：默认脱敏（手机号/身份证/卡号/凭证/JWT → `[phone]` 等分类替换）+ 全字段截断；错误/性能与行为/API 信封均在出口兜底，服务端独立二次脱敏；`enablePrivacyMask` 默认开。出口兜底（`maskDeep`：标识键/数值保留、先 mask 后截断、幂等）与 ingest 二次脱敏已落地（2026-10-10，PV/成功 API URL 剥 query）；声明式属性在出口被遮蔽+截断，但采集端 LIMITS（键数/序列化体积）预算仍未实现（P2）。
+3. **隐私目标**：默认脱敏（手机号/身份证/卡号/凭证/JWT → `[phone]` 等分类替换）+ 全字段截断；错误/性能与行为/API 信封均在出口兜底，服务端独立二次脱敏；`enablePrivacyMask` 默认开。出口兜底（`maskDeep`：标识键/数值保留、先 mask 后截断、幂等）与 ingest 二次脱敏已落地（2026-10-10，PV/成功 API URL 剥 query）；声明式属性出口脱敏 + 采集端 LIMITS（键数/序列化体积）均已对齐。
 
 ### 3.5 版本演进纪律
 
@@ -163,6 +163,6 @@ zod schema 为单一事实来源，TS 类型由 zod 推导；SDK 发送端（生
 
 - fetch 自循环：XHR/fetch 双通道均识别 SDK 自身上报地址并跳过。✅
 - 慢查询/物化视图仅 ClickHouse 形态有效；Memory 形态为简化实现。当前两种形态的行为/API 明细及错误重复计数尚不等价，修复任务见 CURRENT。
-- fetch 响应采样目前对无 `Content-Length` 的文本响应使用 `clone().text()` 全量读取；目标是有界读取样本，不让监控采集随正文持续占用宿主内存。
+- fetch 响应采样对无 `Content-Length` 的文本响应有界读取（最多采 4096 字节即断开克隆流，出样截断 2048 字符），采集内存不随正文持续增长；业务对原响应的读取不受影响。
 - `dd.tracking` 类第三方 Cookie / 跨子域 trackerId 合并：未做。
 - 其余开放风险与待办见 [tasks/CURRENT.md](./tasks/CURRENT.md)。

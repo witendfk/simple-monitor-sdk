@@ -1,6 +1,6 @@
 # 当前任务与进度（tasks/CURRENT）
 
-> 最后更新: 2026-10-10（文档评审批次：告警/SourceMap 补 ⚠️ 重启不持久、PRD 新增数据保留条目、SPEC LIMITS 拆规格/现状两列、docker 联调环境提级为 M7.5 P1 前置、手动 API/过滤/consent 定档「M8 前小切片」。前情：四件套重组，总纲退役归档为 [LEDGER.md](./LEDGER.md)）
+> 最后更新: 2026-10-10（§3.3 修复清单收口：P0 隐私出口 d34cd0f / P1 行为离场 11d46f7 / P1 beacon 拆批 f63b2df / P1 有界解析 2cbce27 / P2 行为预算 5517961，仅剩 Memory 去重随 M7.5 P4；lint 基线降至 166。前情：文档评审批次 + 四件套重组，总纲退役归档为 [LEDGER.md](./LEDGER.md)）
 >
 > 状态说明：`[ ]` 待开始 ｜ `[~]` 进行中 ｜ `[x]` 已完成（含验收记录）｜ `[-]` 搁置/取消。**完成任何条目：勾销 + 回填实际结果；新问题一律先写验收条件再动手**（SOP 见 [ARCHITECTURE §7.3](../ARCHITECTURE.md)）。
 
@@ -8,8 +8,8 @@
 
 | 维度         | 状态                                                                                                     |
 | ------------ | -------------------------------------------------------------------------------------------------------- |
-| 里程碑       | M0-M7 基础能力已落地，§3.3 记录对码评审的未闭合缺口；体积预算脚本尚未接入 CI；下一站 M7.5 存储与权限架构；手动 API/错误过滤/consent 已定档「M8 前小切片」 |
-| 测试         | 最近记录为 239 tests；CI 当前执行 typecheck×3 / lint / build / test / conformance，尚无 size 步骤        |
+| 里程碑       | M0-M7 基础能力已落地；§3.3 对码评审修复清单已收口（6/7 完成，仅剩 Memory 去重随 M7.5 P4）；体积预算脚本尚未接入 CI；下一站 M7.5 存储与权限架构；手动 API/错误过滤/consent 已定档「M8 前小切片」 |
+| 测试         | 最近记录为 268 tests；CI 当前执行 typecheck×3 / lint / build / test / conformance，尚无 size 步骤        |
 | 需求基线     | [PRD](../PRD.md) v1.0.0；Web 核心产品为当前交付线，AI 与小程序不阻塞首发                                 |
 | 开放 P0      | 权限分离（§3.2，既有）——行为/API 隐私旁路与服务端二次脱敏已随 2026-10-10 批次闭合                        |
 | npm 发布     | 搁置（注册被反滥用拦截，找他人账号；流程就绪见 PUBLISH.md）                                              |
@@ -53,13 +53,15 @@
 
 按产品目标记录实现偏差；优先级表示对隐私、数据可信度和宿主稳定性的影响，不表示当前要立即对外部署。以下每项修复后按 [ARCHITECTURE §7.3](../ARCHITECTURE.md) 复审并同步 PRD/SPEC 状态。
 
-- [ ] **P0 信封隐私出口与服务端二次防线** → **[x] 2026-10-10 完成**：utils 新增 `maskDeep`（嵌套出口脱敏：标识键/数值/布尔保留防误伤、敏感键名整值遮蔽、先 mask 后截断、幂等）与 `stripUrlQuery`；行为/API 信封出口 `sanitizeEgress`（PV/成功 API URL 剥 query、埋点 props 深度脱敏）+ 主信封 `buildEnvelope` 出口 maskDeep 兜底（perf detail / error 旁路字段，error.http.url 保持「遮蔽凭证、保留 query」原设计）；ingest 二次脱敏**先于指纹**（message/堆栈帧/面包屑/http/behavior/api/perf detail 全字段，跨 SDK 版本分组稳定），面包屑 512B、http 2KB 截断对齐 LIMITS。验收通过：手机号/JWT/带 token URL 经 track、data-track-props、PV、成功 API、性能 detail 上报后，网络载荷（BatchSender/IndexedDB 缓存同吃出口产物）与两种存储均无原值；服务端直收未脱敏合法信封不落原值。258 测试（新增 19 条隐私回归）+ 三段门禁绿。遗留：声明式采集端 LIMITS（本清单 P2）、服务端 stack 总量截断（SPEC §3.3 偏差列）
-- [ ] **P1 行为通道离场发送**：`packages/core/src/behavior.ts:101` 的 `flushLeaving()` 为空，独立发送器没有离场生命周期；`packages/browser/src/behaviors.ts:114` 的 pagehide dwell 入队后仍等待定时器，hidden 后延迟 pagehide 还可能把后台时间算作停留。接通 hidden/pagehide 与 visible/pageshow 状态切换，只在可见时结算 dwell，结算后同步 flush。验收：页面运行不足 5 秒即关闭，PV、track、成功 API 与达到阈值的 dwell 各进入 beacon 一次；hidden 多秒后 pagehide 不新增后台停留；恢复可见后继续发送且不重复结算
+- [x] **P0 信封隐私出口与服务端二次防线**（2026-10-10，d34cd0f）：utils 新增 `maskDeep`（嵌套出口脱敏：标识键/数值/布尔保留防误伤、敏感键名整值遮蔽、先 mask 后截断、幂等）与 `stripUrlQuery`；行为/API 信封出口 `sanitizeEgress`（PV/成功 API URL 剥 query、埋点 props 深度脱敏）+ 主信封 `buildEnvelope` 出口 maskDeep 兜底（perf detail / error 旁路字段，error.http.url 保持「遮蔽凭证、保留 query」原设计）；ingest 二次脱敏**先于指纹**（message/堆栈帧/面包屑/http/behavior/api/perf detail 全字段，跨 SDK 版本分组稳定），面包屑 512B、http 2KB 截断对齐 LIMITS。验收通过：手机号/JWT/带 token URL 经 track、data-track-props、PV、成功 API、性能 detail 上报后，网络载荷（BatchSender/IndexedDB 缓存同吃出口产物）与两种存储均无原值；服务端直收未脱敏合法信封不落原值。新增 19 条隐私回归。遗留：服务端 stack 总量截断（SPEC §3.3 偏差列）
+- [x] **P1 行为通道离场发送**（2026-10-10，11d46f7）：BehaviorTracker 构造时绑定 hidden/pagehide → markLeaving（立即 beacon 排空）、visible/pageshow → markActive，与主通道同语义，空桩 `flushLeaving()` 删除；dwell 结算改显式 countSegment——hidden 转换结算刚结束的可见段、hidden 期 pagehide 贡献 0ms（后台停留不计入）、可见期直接关闭由 pagehide 兜底。修复过程发现并纠正 settle 的 dwellHidden 标志自咬尾巴（整段可见时长被算 0）。验收通过：不足 5s 关闭时 PV/track/成功 API/达阈 dwell 各进 beacon 一次；hidden 多秒后 pagehide 零新增；恢复可见继续发送不重复结算（jsdom 假时钟场景测试）
 - [ ] **P1 CH 行为/API 明细完整性**：`apps/server/src/storage/clickhouse.storage.ts:13` 的 EventRow 与 `docker/clickhouse/init.sql:3` 无 behavior/api 明细列，`recentBehaviors()` 只读通用列。可先补当前宽表列，再随 M7.5 P2 分表；M8/M9 查询依赖此数据。验收：相同 PV 来源、track 属性及 API method/url/status/duration 写入两种存储后，明细查询一致
-- [ ] **P1 beacon 大信封拆批**：`packages/core/src/batchSender.ts:184` 每段都从事件数组起点截取，后续事件丢失且首段重复；当前按 UTF-16 长度而非 UTF-8 字节判 64KB；部分分片失败时会缓存整包，重放已被接受的分片。按实际事件偏移与字节预算拆分，逐片记录结果。验收：多个不同事件组成 >64KB 信封，全部 beacon 合并后每个事件恰好出现一次，单片字节数不超上限；模拟前片成功后片失败，仅失败片入缓存
+- [x] **P1 beacon 大信封拆批**（2026-10-10，f63b2df）：删除「每段从事件数组起点截取」的 buildLeavingJson；改为按每个事件真实 UTF-8 字节精确装箱（信封上下文开销恒定可预算），每个事件恰好进入一个分片；判长 UTF-16 length → TextEncoder UTF-8 字节；分片逐片发送逐片记录结果，仅失败片入缓存（已接受分段不重放）。验收通过：9 条 CJK 大事件（UTF-16 约 23KB / UTF-8 约 68KB，旧实现不会拆）拆 ≥2 片、合并每事件恰好一次、单片 ≤64KB；前片成功后片失败仅失败片入库
 - [ ] **P1 Memory 错误去重误抑制**：`apps/server/src/storage/memory.storage.ts:14` 的永久 Set 把 SDK 允许的第二次同类错误和跨会话错误都当重试；淘汰旧事件时 Set 不回收。与 M7.5 P4 的稳定事件 ID/窗口设计合并修复。验收：两次真实发生及跨会话同类错误都计数；同一事件重放只计一次；超过 5 万事件后去重状态有界
-- [ ] **P1 有界解析与采样**：`apps/server/src/main.ts:43` 的 gzip 只限制压缩输入，`gunzipSync` 无解压输出上限；`packages/browser/src/replace.ts:268` 对无 Content-Length 的文本响应 `clone().text()` 全量读入。分别限制解压后字节数、流式有界读取响应样本。验收：高压缩比请求返回 413；无长度头的大型/持续文本响应不会让服务端或宿主内存随正文持续增长，业务响应仍可正常读取
-- [ ] **P2 行为预算与声明式 LIMITS**：`packages/core/src/behavior.ts:86` 把成功 API 算入 500 条行为采集预算；`packages/browser/src/behaviors.ts:141` 的声明式属性绕过键数/体积限制。按 PRD 区分会话采集预算（满额丢新）与待发送缓冲上限（满额丢旧），成功 API 只受独立采样与发送缓冲上限约束。验收：成功 API 不挤占行为预算；第 501 条行为按预算丢弃，缓冲区超限保留最新事件；超 32 键/2KB 的 `data-track-props` 按契约处理且不整包拒绝
+- [x] **P1 有界解析与采样**（2026-10-10，2cbce27）：gunzip 中间件抽取为 `report/gunzip-body.middleware.ts`（main.ts 与 e2e 共用，测试跑生产同款路径）；gunzipSync 全量缓冲改流式解压 + 输出计数，解压超 2MB 毁流回 413；fetch 响应采样从 `clone().text()` 全量读改 ReadableStream 有界读（≤4096 字节即断开克隆流）。修复过程发现 undici 对未关闭流的克隆体 `cancel()` 永不 resolve，改 fire-and-forget。验收通过：~4KB 输入解压 4MB → 413；9MB 无长度头流式响应采样 ≤2048 字符且业务完整消费；无界持续流产出面包屑（旧实现 text() 永挂起）且原流可续读
+- [x] **P2 行为预算与声明式 LIMITS**（2026-10-10，5517961）：单会话行为预算（500 条）只计 behavior 事件，成功 API 只受独立采样与发送缓冲自限（丢最旧）约束；声明式入口（data-track-props）与代码埋点在 `BehaviorTracker.sendBehavior` 统一对齐 LIMITS（name ≤128 / props 键数 ≤32 / 序列化 ≤2KB，超限丢 props 不整包拒绝）。验收通过：预算满额后 API 仍入队出站、第 501 条行为丢弃且不产生新信封；声明式 40 键截断到 32、超 2KB 丢 props 且事件本体保留
+
+本清单收口情况：P0/P1/P2 共 6 项已完成，仅剩 **P1 Memory 错误去重**按设计并入 M7.5 P4（须先在 SPEC 定义稳定事件 ID 与重试窗口）。
 
 ## 4. 待办 Backlog（勾销制）
 
@@ -79,7 +81,7 @@
 ### 4.3 遗留验证与工程项
 
 - [ ] `pnpm size` 接入 CI 构建后步骤，超预算阻断合并（M7 遗留）
-- [ ] `pnpm lint:ci` 当前 167 warnings，恰达 167 上限；按批消减存量并同步下调 `--max-warnings`，验收为下一批 warning 数与上限均低于 167
+- [x] `pnpm lint:ci` warning 基线与上限双降：167 → 166（2026-10-10 beacon 拆批批次净消 1 条，`--max-warnings` 同步下调 166）
 - [ ] k6 压测实测：接入层 5k events/s 单机稳定（脚本见 `apps/server/k6/report.js`）
 - [ ] 真实 IndexedDB 断网→恢复 e2e（M2 遗留）
 - [ ] SDK 自身 long task 开销度量（M2 遗留）
