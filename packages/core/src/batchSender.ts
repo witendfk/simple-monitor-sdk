@@ -181,21 +181,6 @@ export class BatchSender {
     }
   }
 
-  /** 离场拆批辅助：用已构建信封的上下文 + 事件子集重建 json */
-  private buildLeavingJson(
-    built: { dsn: string; envelope: TransportEnvelope },
-    part: Array<{ dsn: string; data: any }>
-  ): string {
-    try {
-      return JSON.stringify({
-        ...built.envelope,
-        events: built.envelope.events.slice(0, part.length),
-      })
-    } catch {
-      return JSON.stringify({ ...built.envelope, events: [] })
-    }
-  }
-
   /** 离场同步通道：beacon 逐信封发送（不缓冲不重试，浏览器保证尽力送达） */
   private flushLeaving(payloads: Array<{ dsn: string; data: any }>): void {
     if (payloads.length === 0) return
@@ -241,33 +226,55 @@ export class BatchSender {
         return
       }
     }
+    // 单段路径：整体 ≤64KB（UTF-8 字节）直接发
+    if (utf8ByteLength(json) <= BEACON_MAX_BYTES) {
+      this.sendLeavingPart(built.dsn, url as string, json, payloads.length)
+      return
+    }
+    // 超限拆批（§3.3 P1）：按每个事件的真实 UTF-8 字节精确装箱——信封上下文开销恒定，
+    // 每个事件恰好进入一个分片（旧实现每段从事件数组起点截取：后续事件丢失且首段重复；
+    // 且以 UTF-16 length 判 64KB，中日文载荷会被低估）。单事件超限时独立成段，
+    // beacon 拒收后仅该段落库待重放。
+    const events = built.envelope.events
+    const sizes = events.map((e) => utf8ByteLength(JSON.stringify(e)))
+    // json = 上下文 + [e1,...,en]；事件数组段 = Σsize + (n-1) 逗号 + 2 方括号
+    const overhead =
+      utf8ByteLength(json) - (sizes.reduce((sum, n) => sum + n, 0) + events.length + 1)
+    let start = 0
+    while (start < events.length) {
+      let bytes = overhead + 2
+      let end = start
+      while (end < events.length) {
+        const add = sizes[end] + (end > start ? 1 : 0)
+        if (end > start && bytes + add > BEACON_MAX_BYTES) break
+        bytes += add
+        end += 1
+      }
+      let partJson: string
+      try {
+        partJson = JSON.stringify({ ...built.envelope, events: events.slice(start, end) })
+      } catch (error) {
+        logger.error('leaving part serialize error:', error)
+        break
+      }
+      this.sendLeavingPart(built.dsn, url as string, partJson, end - start)
+      start = end
+    }
+  }
+
+  /** 离场单段发送：成功即止；失败仅缓存本段（已接受分段不重放，§3.3 P1） */
+  private sendLeavingPart(dsn: string, url: string, json: string, count: number): void {
     try {
       const beacon = (globalThis as any)?.navigator?.sendBeacon
-      if (typeof beacon === 'function') {
-        // beacon 单次 ≤64KB：超限按事件拆批（ADR-8 增补 7），任一失败视为失败
-        if (json.length > BEACON_MAX_BYTES) {
-          const half = Math.max(1, Math.ceil(payloads.length / 2))
-          let allOk = true
-          for (let i = 0; i < payloads.length; i += half) {
-            const part = this.buildLeavingJson(built, payloads.slice(i, i + half))
-            if (!beacon.call(globalThis.navigator, url, part)) allOk = false
-          }
-          if (allOk) {
-            this.deps.onSendResult?.(true, built.dsn, payloads.length)
-            return
-          }
-          // 拆批仍有失败：走下方落库兜底
-        } else if (beacon.call(globalThis.navigator, url, json)) {
-          this.deps.onSendResult?.(true, built.dsn, payloads.length)
-          return
-        }
+      if (typeof beacon === 'function' && beacon.call(globalThis.navigator, url, json)) {
+        this.deps.onSendResult?.(true, dsn, count)
+        return
       }
     } catch (error) {
       logger.error('sendBeacon error:', error)
     }
-    // beacon 不可用/被拒：同步兜底无法保证送达，落库待重放
     void this.cache.save(String(url), json)
-    this.deps.onSendResult?.(false, built.dsn, payloads.length)
+    this.deps.onSendResult?.(false, dsn, count)
   }
 
   /** 主动期发送：gzip（可用时）→ fetch keepalive → 指数退避重试 → IndexedDB 兜底 */
@@ -412,6 +419,18 @@ export class BatchSender {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** UTF-8 字节长度（beacon 的 64KB 限额按字节计；UTF-16 length 会低估中日文/emoji 载荷） */
+function utf8ByteLength(text: string): number {
+  if (typeof TextEncoder !== 'undefined') {
+    try {
+      return new TextEncoder().encode(text).length
+    } catch {
+      /* 退化到 UTF-16 length 估算 */
+    }
+  }
+  return text.length
 }
 
 /** 发送超时（挂起的服务端会让 inFlight 永不释放）；旧环境无 AbortSignal.timeout 时退化为不限时 */
