@@ -81,11 +81,17 @@ export class BehaviorTracker {
     }
   }
 
-  /** 入队一条 behavior 事件（按域采样 + 防风暴） */
+  /** 入队一条 behavior 事件（按域采样 + 防风暴 + LIMITS 对齐） */
   sendBehavior(behavior: BehaviorPayload): void {
     if (this.destroyed) return
     if (!roll(this.deps.getTrackSampleRate())) return
-    this.enqueue({ kind: 'behavior', behavior })
+    // 声明式入口（data-track-props）与代码埋点在此统一对齐 LIMITS（§3.3 P2）：
+    // name ≤128 / props 键数 ≤32 / 序列化 ≤2KB——超限丢 props 而非整包拒绝
+    const normalized =
+      behavior.behaviorType === 'track' && typeof behavior.name === 'string'
+        ? { ...behavior, ...sanitizeTrackPayload(behavior.name, behavior.props) }
+        : behavior
+    this.enqueue({ kind: 'behavior', behavior: normalized })
   }
 
   /** 入队一条成功请求明细（独立采样，默认 0.1） */
@@ -98,16 +104,24 @@ export class BehaviorTracker {
   private enqueue(
     event: { kind: 'behavior'; behavior: BehaviorPayload } | { kind: 'api'; api: ApiPayload }
   ): void {
-    // 单会话总量防风暴（超出静默丢弃，不丢主通道数据）
-    if (this.count >= LIMITS.maxBehaviorPerSession) return
-    this.count += 1
     const dsn = this.deps.getDsn()
+    // 单会话行为预算只计 behavior 事件（§3.3 P2）：成功 API 是体量大头，挤占预算会让
+    // 埋点在富请求页面上提前枯竭；API 只受独立采样与发送缓冲自限（丢最旧）约束
+    if (event.kind === 'behavior') {
+      if (this.count >= LIMITS.maxBehaviorPerSession) return
+      this.count += 1
+    }
     this.sender.add(dsn, event as unknown as Record<string, unknown>)
   }
 
   /** 测试观测：当前缓冲的行为事件数 */
   get pendingCount(): number {
     return this.sender.bufferedCount
+  }
+
+  /** 测试观测：本会话已消耗的行为采集预算（仅 behavior 事件计数） */
+  get behaviorBudgetUsed(): number {
+    return this.count
   }
 
   /** 离场状态切换入口（测试用）：直接驱动内部 BatchSender 的通道状态机 */
