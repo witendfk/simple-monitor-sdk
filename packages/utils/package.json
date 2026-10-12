@@ -2,13 +2,14 @@
   "name": "@simple-monitor/utils",
   "version": "0.1.0",
   "description": "Utility functions for Simple Monitor SDK",
-  "main": "./dist/index.mjs",
+  "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
     }
   },
   "files": [

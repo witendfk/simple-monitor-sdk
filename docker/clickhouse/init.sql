@@ -1,4 +1,4 @@
--- events：明细事件表（总纲 §6.3）
+-- events：明细事件表（历史设计：LEDGER §6.3；现行拓扑：docs/ARCHITECTURE.md）
 -- perf 指标 unwind 后一行一指标；错误一行一事件
 CREATE TABLE IF NOT EXISTS events
 (
@@ -63,13 +63,15 @@ FROM events
 WHERE kind = 'error' AND fingerprint != ''
 GROUP BY apikey, fingerprint, type;
 
--- 性能分位物化视图：quantileTDigest 状态按 小时×指标 聚合（发版对比查询直读）
+-- 性能分位物化视图：quantilesTDigest 状态按 小时×指标 聚合（发版对比查询直读）
+-- 注意多分位必须用 quantilesTDigest 家族——quantileTDigest 只接受单个 level 参数
+-- （ClickHouse 24.8 实测：多 level 的 quantileTDigest 会以 NUMBER_OF_ARGUMENTS_DOESNT_MATCH 拒绝建表）
 CREATE TABLE IF NOT EXISTS perf_stats_mv
 (
     hour          DateTime,
     apikey        LowCardinality(String),
     metricName    LowCardinality(String),
-    quantiles     AggregateFunction(quantileTDigest(0.5, 0.75, 0.95), Float32),
+    quantiles     AggregateFunction(quantilesTDigest(0.5, 0.75, 0.95), Float32),
     count         SimpleAggregateFunction(sum, UInt64)
 )
     ENGINE = AggregatingMergeTree
@@ -78,11 +80,11 @@ CREATE TABLE IF NOT EXISTS perf_stats_mv
 CREATE MATERIALIZED VIEW IF NOT EXISTS perf_stats_view
     TO perf_stats_mv
 AS
-SELECT toStartOfHour(ts)                              AS hour,
+SELECT toStartOfHour(ts)                                 AS hour,
        apikey,
        metricName,
-       quantileTDigestState(0.5, 0.75, 0.95)(metricValue) AS quantiles,
-       count()                                        AS count
+       quantilesTDigestState(0.5, 0.75, 0.95)(metricValue) AS quantiles,
+       count()                                          AS count
 FROM events
 WHERE kind = 'perf'
 GROUP BY apikey, metricName, hour;

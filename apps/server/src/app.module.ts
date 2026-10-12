@@ -46,7 +46,13 @@ import { QueryController } from './query/query.controller'
       provide: STORAGE_TOKEN,
       inject: [CONFIG_TOKEN],
       useFactory: (config: ServerConfig): IEventStorage =>
-        config.clickhouseUrl ? new ClickHouseStorage(config.clickhouseUrl) : new MemoryStorage(),
+        config.clickhouseUrl
+          ? new ClickHouseStorage(
+              config.clickhouseUrl,
+              config.clickhouseUsername,
+              config.clickhousePassword
+            )
+          : new MemoryStorage(),
     },
     {
       provide: RATE_LIMITER_TOKEN,

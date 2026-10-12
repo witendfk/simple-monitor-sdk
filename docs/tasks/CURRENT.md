@@ -1,6 +1,6 @@
 # 当前任务与进度（tasks/CURRENT）
 
-> 最后更新: 2026-10-10（§3.3 修复清单收口：P0 隐私出口 d34cd0f / P1 行为离场 11d46f7 / P1 beacon 拆批 f63b2df / P1 有界解析 2cbce27 / P2 行为预算 5517961，仅剩 Memory 去重随 M7.5 P4；lint 基线降至 166。前情：文档评审批次 + 四件套重组，总纲退役归档为 [LEDGER.md](./LEDGER.md)）
+> 最后更新: 2026-10-12（**M7.5 P1 前置完成**：colima + 三容器 healthy + infra 全链路冒烟绿，发现并修复 init.sql 多分位 / CH DateTime 格式 / utils·types 缺 require 导出三个真实缺陷，P2 挂账「时区不一致」销案；前情：§3.3 修复清单收口 + 文档评审批次）
 >
 > 状态说明：`[ ]` 待开始 ｜ `[~]` 进行中 ｜ `[x]` 已完成（含验收记录）｜ `[-]` 搁置/取消。**完成任何条目：勾销 + 回填实际结果；新问题一律先写验收条件再动手**（SOP 见 [ARCHITECTURE §7.3](../ARCHITECTURE.md)）。
 
@@ -13,7 +13,7 @@
 | 需求基线     | [PRD](../PRD.md) v1.0.0；Web 核心产品为当前交付线，AI 与小程序不阻塞首发                                 |
 | 开放 P0      | 权限分离（§3.2，既有）——行为/API 隐私旁路与服务端二次脱敏已随 2026-10-10 批次闭合                        |
 | npm 发布     | 搁置（注册被反滥用拦截，找他人账号；流程就绪见 PUBLISH.md）                                              |
-| 基础设施验证 | 真实 Redis/ClickHouse 联调、k6 压测实测待 docker 环境（已提级为 M7.5 P1 前置，见 §3.1）                  |
+| 基础设施验证 | docker 环境已立（colima，2026-10-12）：Redis/CH 真实联调冒烟通过、Postgres healthy 待 P1 接线；k6 压测实测待跑                  |
 
 ## 2. 已完成里程碑（M0-M7，详情见 [LEDGER.md](./LEDGER.md) 附录 B）
 
@@ -34,7 +34,7 @@
 
 ### 3.1 [ ] M7.5 生产级存储架构（ADR-4 落地，设计见 [ARCHITECTURE §3.2](../ARCHITECTURE.md)）
 
-- [ ] **P1 前置：联调环境立起**：docker-compose 起真实 Redis / ClickHouse / Postgres（原 §4.3「M4 遗留验证」提级——P1/P2 的验收条件均依赖此环境，环境未立不动 P1）。验收：三容器健康检查通过，server 以 `NODE_STORAGE=infra` 起动后全链路冒烟绿
+- [x] **P1 前置：联调环境立起**（2026-10-12）：本机立起 colima（brew 安装，走系统代理 127.0.0.1:7897）；docker-compose 新增 postgres 服务与 CLICKHOUSE_PASSWORD 凭证（官方镜像 24.x 起不允许 default 空密码匿名），三容器 healthy。冒烟过程发现并修复三个真实缺陷：① init.sql `quantileTDigest(0.5,0.75,0.95)` 多 level 非法——24.8 实测 NUMBER_OF_ARGUMENTS_DOESNT_MATCH，建表失败容器退出，改 `quantilesTDigest` 家族；② CH DateTime 边界格式（写入留毫秒 / 查询传完整 ISO）→ `toClickHouseDateTime` 统一 UTC 短格式，P2 挂账「时区格式不一致」实锤销案；③ utils/types 包 exports 缺 require 条件——server 以 CJS 解析报 ERR_PACKAGE_PATH_NOT_EXPORTED，vitest 走 ESM 不暴露，补双格式导出。验收通过：POST /report/batch → 204 → Redis 消费 → CH 四 kind 落库 → /api/overview 出数带服务端指纹（Node 20 + tsx；infra 开关现状为 REDIS_URL/CLICKHOUSE_URL 在位即启用，NODE_STORAGE 一键切换仍属 M7.5 目标）。270 测试全绿
 - [ ] **P1 Postgres 元数据**：projects 双密钥 / users / members / issues 状态机（fingerprint UNIQUE + first_seen/last_seen/event_count）/ alert_rules+history / releases / sourcemap_artifacts 全量 DDL，替换内存实现。验收：docker-compose 起库后全链路回归绿；CH 写入与 PG Issue 更新任一步失败时可重放或对账，不永久错计
 - [ ] **P2 CH 按 kind 分表**：error_events（含 resource_kind）/ perf_events / behavior_events / api_events 四表 + 各自物化视图，替代单宽表；须完整保留行为事件名/属性/PV 来源与成功 API 请求明细，不能沿用现有宽表只存通用列的缺口。验收：k6 冒烟 + 相同数据在 Memory/CH 的明细与聚合查询一致
 - [ ] **P3 权限分离**（= 下文 3.2，P0 消零）
@@ -75,7 +75,7 @@
 
 - **死代码/配置契约**：silentHashchange 零消费；silentWxOnUnhandledRejection/silentMiniRoute 声明无绑定；信封 referrer/viewport 未接线；beaconPost/xhrPost 生产零调用；core/logger.ts 整文件与 utils 15+ 死导出；shared constants 键名与 session.ts 字面量两套并存；ERROR_TYPE_RE 两份正则不同双零引用
 - **健壮性边界**：validateOption NaN 穿透（sampleRate/限流阈值）；extractErrorStack gecko 空栈分支；XHR readystatechange 监听堆积；INP Map 滞留 DOM 引用；bfcache pageshow 未 once；CCP completeQueue 无界 / isIncludeArr 不计重数 / lazy 图片永不产出；用户正则 g 标志 lastIndex 污染；Vue 非 Error 脏上报；SVG 资源误报 JS 错误（待确认）；React 无 silent 开关；collectDeviceInfo 单层 try；domReplace 节流异常隔离；自定义打点信封通道静默丢失；logger 默认 enabled=false 使 error 级全静默；面包屑 push 每次 sort O(n log n)
-- **服务端**：二次截断只做一半（stack 32KB/面包屑 512B/httpBody）；RedisRateLimiter INCR/EXPIRE 非原子；error_spike 基线含观测窗口；MemoryQueue 缓冲无界；affectedSessions 乱序虚增；PROJECTS_JSON 解析失败静默回落 demo；CH 写入/查询时区格式不一致（待确认）
+- **服务端**：二次截断只做一半（stack 32KB/面包屑 512B/httpBody）；RedisRateLimiter INCR/EXPIRE 非原子；error_spike 基线含观测窗口；MemoryQueue 缓冲无界；affectedSessions 乱序虚增；PROJECTS_JSON 解析失败静默回落 demo（~~CH 写入/查询时区格式不一致~~ 已随 2026-10-12 infra 冒烟实锤修复：toClickHouseDateTime）
 - **看板/示例**：「10s 自动刷新」对 errors tab 不成立；AlertsView 表单弱校验；看板无 ErrorBoundary；看板零测试覆盖
 
 ### 4.3 遗留验证与工程项

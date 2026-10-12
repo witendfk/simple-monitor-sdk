@@ -13,6 +13,9 @@ const ConfigSchema = z.object({
   port: z.coerce.number().int().positive().default(3000),
   redisUrl: z.string().optional(),
   clickhouseUrl: z.string().optional(),
+  /** ClickHouse 凭证（官方镜像 24.x 起不再允许 default 空密码匿名） */
+  clickhouseUsername: z.string().default('default'),
+  clickhousePassword: z.string().default(''),
   /** 项目注册表 JSON：[{"apikey":"demo-key","name":"demo","rateLimitPerMin":1000}] */
   projectsJson: z.string().optional(),
   /** 本地演示放开 webhook 私网/环回限制（SSRF 防护默认开） */
@@ -23,6 +26,9 @@ export interface ServerConfig {
   port: number
   redisUrl?: string
   clickhouseUrl?: string
+  /** 缺省 default / 空密码（storage 侧构造参数兜底） */
+  clickhouseUsername?: string
+  clickhousePassword?: string
   projectsJson?: string
   webhookAllowPrivate: boolean
 }
@@ -32,6 +38,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: env.PORT,
     redisUrl: env.REDIS_URL || undefined,
     clickhouseUrl: env.CLICKHOUSE_URL || undefined,
+    clickhouseUsername: env.CLICKHOUSE_USERNAME || undefined,
+    clickhousePassword: env.CLICKHOUSE_PASSWORD || '',
     projectsJson: env.PROJECTS_JSON || undefined,
     webhookAllowPrivate: env.WEBHOOK_ALLOW_PRIVATE === '1',
   })

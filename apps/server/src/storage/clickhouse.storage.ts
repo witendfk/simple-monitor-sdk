@@ -39,15 +39,24 @@ interface EventRow {
   breadcrumbs: string
 }
 
+/**
+ * ClickHouse DateTime 无时区语义（镜像默认 UTC）：写入与查询参数边界统一格式化为
+ * UTC 'YYYY-MM-DD HH:MM:SS'。ISO 8601（T/毫秒/Z）CH 不接受——旧实现 insert 侧留了
+ * 毫秒、查询参数传完整 ISO，分别以 CANNOT_PARSE_INPUT / BAD_QUERY_PARAMETER 失败
+ * （挂账「CH 写入/查询时区格式不一致」的实锤与修复，2026-10-12 infra 冒烟发现）。
+ */
+export function toClickHouseDateTime(d: Date): string {
+  return d.toISOString().slice(0, 19).replace('T', ' ')
+}
+
 @Injectable()
 export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
   private readonly logger = new Logger(ClickHouseStorage.name)
   private readonly client: ClickHouseClient
 
-  constructor(url: string) {
-    this.client = createClient({ url })
+  constructor(url: string, username = 'default', password = '') {
+    this.client = createClient({ url, username, password })
   }
-
   async onApplicationShutdown(): Promise<void> {
     await this.client.close()
   }
@@ -69,7 +78,7 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
     const rows: EventRow[] = []
     for (const e of events) {
       const base = {
-        ts: e.ts.toISOString().replace('T', ' ').replace('Z', ''),
+        ts: toClickHouseDateTime(e.ts),
         apikey: e.apikey,
         kind: e.kind,
         type: e.type,
@@ -106,7 +115,7 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
   }
 
   async overview(apikey: string, sinceMs: number): Promise<OverviewStats> {
-    const since = new Date(Date.now() - sinceMs).toISOString()
+    const since = toClickHouseDateTime(new Date(Date.now() - sinceMs))
     const rs = await this.client.query({
       query: `SELECT
                 count() AS total,
@@ -137,7 +146,7 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
   }
 
   async errorGroups(apikey: string, limit: number, sinceMs?: number): Promise<ErrorGroup[]> {
-    const since = new Date(Date.now() - (sinceMs ?? 7 * 24 * 3600_000)).toISOString()
+    const since = toClickHouseDateTime(new Date(Date.now() - (sinceMs ?? 7 * 24 * 3600_000)))
     const rs = await this.client.query({
       query: `SELECT
                 fingerprint,
@@ -237,7 +246,7 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
     metric: string,
     sinceMs: number
   ): Promise<PerfQuantiles> {
-    const since = new Date(Date.now() - sinceMs).toISOString()
+    const since = toClickHouseDateTime(new Date(Date.now() - sinceMs))
     const rs = await this.client.query({
       query: `SELECT
                 count() AS count,

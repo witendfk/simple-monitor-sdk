@@ -1,6 +1,4 @@
-version: "3.8"
-
-# simple-monitor 服务端基础设施（总纲 §6.4）
+# simple-monitor 服务端基础设施（部署拓扑见 docs/ARCHITECTURE.md §6）
 # 用法：docker compose up -d → SDK dsn 指向 http://localhost:3000/report/batch
 # 服务端运行：PROJECTS_JSON='[{"apikey":"demo-key","name":"demo"}]' REDIS_URL=... CLICKHOUSE_URL=... pnpm --filter @simple-monitor/server start
 
@@ -20,6 +18,9 @@ services:
     ports:
       - "8123:8123"   # HTTP（@clickhouse/client 默认）
       - "9000:9000"   # native
+    environment:
+      # 24.x 官方镜像不再允许 default 空密码匿名——服务端连接用同一凭证（CLICKHOUSE_PASSWORD）
+      CLICKHOUSE_PASSWORD: monitor
     ulimits:
       nofile:
         soft: 262144
@@ -33,5 +34,24 @@ services:
       timeout: 3s
       retries: 10
 
+  # M7.5 P1：元数据域（projects 双密钥 / issues 状态机 / alert_rules / releases /
+  # sourcemap_artifacts）。当前 P1 前置只要求容器健康，服务端接线随 P1 落地。
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: monitor
+      POSTGRES_PASSWORD: monitor
+      POSTGRES_DB: monitor
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monitor -d monitor"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   clickhouse-data:
+  postgres-data:
