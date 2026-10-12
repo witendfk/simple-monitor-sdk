@@ -16,7 +16,7 @@ SDK（十包）──POST /report/batch──▶ 接入层（zod 校验 + 限流
                               Ingest（schema 校验/字段投影/脱敏截断/服务端 fingerprint）
                                     │
                                     ▼
-                     存储（Memory 形态 ⇄ ClickHouse 明细 + 物化视图；Postgres 元数据 🚧 M7.5）
+                     存储（Memory 形态 ⇄ ClickHouse 明细 + 物化视图 + Postgres 元数据）
                                     │
                     ┌───────────────┼────────────────┐
                     ▼               ▼                ▼
