@@ -22,9 +22,9 @@ import type { Request } from 'express'
 import { z } from 'zod'
 import { CONFIG_TOKEN, type ServerConfig } from '../config'
 import { ApiKeyGuard } from '../auth/api-key.guard'
-import { AlertRuleStore } from './rule-store'
+import { ALERT_RULE_STORE_TOKEN, type IAlertRuleStore } from './rule-store'
 import { isSafeWebhookUrl } from './webhook-url'
-import type { AlertRule } from './alert.types'
+import type { AlertFire, AlertRule } from './alert.types'
 
 /** Guard 写入 req.apikey（见 api-key.guard.ts） */
 type AuthedRequest = Request & { apikey: string }
@@ -82,17 +82,17 @@ function normalizeRule(
 export class AlertRulesController {
   /** class 型参数显式 @Inject（vitest esbuild 无 design:paramTypes 元数据——项目必查项） */
   constructor(
-    @Inject(AlertRuleStore) private readonly store: AlertRuleStore,
+    @Inject(ALERT_RULE_STORE_TOKEN) private readonly store: IAlertRuleStore,
     @Inject(CONFIG_TOKEN) private readonly config: ServerConfig
   ) {}
 
   @Get()
-  list(@Req() req: AuthedRequest): AlertRule[] {
+  async list(@Req() req: AuthedRequest): Promise<AlertRule[]> {
     return this.store.list(req.apikey)
   }
 
   @Post()
-  create(@Req() req: AuthedRequest, @Body() body: unknown): AlertRule {
+  async create(@Req() req: AuthedRequest, @Body() body: unknown): Promise<AlertRule> {
     const parsed = CreateRuleSchema.safeParse(body)
     if (!parsed.success) {
       throw new BadRequestException({ error: 'invalid alert rule', issues: parsed.error.issues })
@@ -104,12 +104,12 @@ export class AlertRulesController {
   }
 
   @Delete(':id')
-  remove(@Req() req: AuthedRequest, @Param('id') id: string): { deleted: boolean } {
-    const rule = this.store.get(id)
+  async remove(@Req() req: AuthedRequest, @Param('id') id: string): Promise<{ deleted: boolean }> {
+    const rule = await this.store.get(id)
     if (!rule || rule.apikey !== req.apikey) {
       throw new NotFoundException({ error: 'rule not found' })
     }
-    this.store.delete(id)
+    await this.store.delete(id)
     return { deleted: true }
   }
 }
@@ -117,13 +117,10 @@ export class AlertRulesController {
 @Controller('api/alert-fires')
 @UseGuards(ApiKeyGuard)
 export class AlertFiresController {
-  constructor(@Inject(AlertRuleStore) private readonly store: AlertRuleStore) {}
+  constructor(@Inject(ALERT_RULE_STORE_TOKEN) private readonly store: IAlertRuleStore) {}
 
   @Get()
-  list(
-    @Req() req: AuthedRequest,
-    @Query('limit') limit?: string
-  ): ReturnType<AlertRuleStore['listFires']> {
+  list(@Req() req: AuthedRequest, @Query('limit') limit?: string): Promise<AlertFire[]> {
     return this.store.listFires(req.apikey, Number(limit) || 50)
   }
 }

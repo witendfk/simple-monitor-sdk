@@ -101,7 +101,7 @@ CLS session-window、INP interactionId 聚合 + P98（≤50 取最大 / >50 取 
 
 - **Memory 形态**（零依赖起步、CI/e2e 使用）：内存事件数组 + apikey 查询隔离；当前按 `apikey+errorId` 永久跳过错误，误抑制合法重复/跨会话错误，且 Set 不随事件淘汰。没有可用的服务端事件级幂等。全链路 e2e 在此形态跑。
 - **ClickHouse 形态**：单宽表 `events`（MergeTree，PARTITION BY 月，ORDER BY (apikey,kind,type,ts)，TTL 30 天）+ 错误组/性能分位物化视图。当前行为/API 只保存通用列，事件名/属性/PV 来源及请求详情未入库；`/api/behaviors` 与 Memory 形态不等价。⚠️ 真实联调待 docker 环境。
-- **Postgres 元数据** 🚧：M7.5 P1 落地 projects 双密钥/users/members/issues 状态机/alert_rules/releases/sourcemap_artifacts（现内存/PROJECTS_JSON 过渡）。
+- **Postgres 元数据** ✅ M7.5 P1 落地：users / projects（双密钥）/ project_members / issues 状态机 / alert_rules+history / releases / sourcemap_artifacts 全量 DDL（docker/postgres/init.sql）；PG_URL 在位时项目/告警规则/SourceMap 工件/Issue 四域切 PG 实现（内存实现保留为零依赖形态），ingest 双写 = PG 幂等 upsert 先行 + CH 事实落库 + count 对账。
 
 ## 5. 看板（apps/dashboard）
 

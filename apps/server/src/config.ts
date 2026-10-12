@@ -13,6 +13,8 @@ const ConfigSchema = z.object({
   port: z.coerce.number().int().positive().default(3000),
   redisUrl: z.string().optional(),
   clickhouseUrl: z.string().optional(),
+  /** Postgres 元数据域（M7.5 P1）：在位即启用 PG 实现（项目/告警规则/工件/Issue） */
+  pgUrl: z.string().optional(),
   /** ClickHouse 凭证（官方镜像 24.x 起不再允许 default 空密码匿名） */
   clickhouseUsername: z.string().default('default'),
   clickhousePassword: z.string().default(''),
@@ -26,6 +28,7 @@ export interface ServerConfig {
   port: number
   redisUrl?: string
   clickhouseUrl?: string
+  pgUrl?: string
   /** 缺省 default / 空密码（storage 侧构造参数兜底） */
   clickhouseUsername?: string
   clickhousePassword?: string
@@ -38,6 +41,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: env.PORT,
     redisUrl: env.REDIS_URL || undefined,
     clickhouseUrl: env.CLICKHOUSE_URL || undefined,
+    pgUrl: env.PG_URL || undefined,
     clickhouseUsername: env.CLICKHOUSE_USERNAME || undefined,
     clickhousePassword: env.CLICKHOUSE_PASSWORD || '',
     projectsJson: env.PROJECTS_JSON || undefined,

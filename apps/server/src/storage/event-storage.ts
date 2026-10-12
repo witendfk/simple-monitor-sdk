@@ -56,4 +56,6 @@ export interface IEventStorage {
   performanceQuantiles(apikey: string, metric: string, sinceMs: number): Promise<PerfQuantiles>
   /** 最近行为事件（M7 通道冒烟 / M9 事件浏览器雏形） */
   recentBehaviors(apikey: string, limit: number): Promise<Array<Record<string, unknown>>>
+  /** 指纹错误计数（M7.5 P1 Issue 对账的事实源：CH 为事件事实，PG 只存可变状态） */
+  errorCountsByFingerprint(apikey: string, fingerprints: string[]): Promise<Map<string, number>>
 }

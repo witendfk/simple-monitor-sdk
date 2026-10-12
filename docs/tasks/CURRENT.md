@@ -1,6 +1,6 @@
 # 当前任务与进度（tasks/CURRENT）
 
-> 最后更新: 2026-10-12（**M7.5 P1 前置完成**：colima + 三容器 healthy + infra 全链路冒烟绿，发现并修复 init.sql 多分位 / CH DateTime 格式 / utils·types 缺 require 导出三个真实缺陷，P2 挂账「时区不一致」销案；前情：§3.3 修复清单收口 + 文档评审批次）
+> 最后更新: 2026-10-12（**M7.5 P1 完成**：PG 元数据 8 表全量 DDL + 四域接口化双实现 + ingest 双写幂等设计，infra 全开冒烟绿；重入门闩竞态顺手修复。前情：P1 前置环境立起 + §3.3 修复清单收口）
 >
 > 状态说明：`[ ]` 待开始 ｜ `[~]` 进行中 ｜ `[x]` 已完成（含验收记录）｜ `[-]` 搁置/取消。**完成任何条目：勾销 + 回填实际结果；新问题一律先写验收条件再动手**（SOP 见 [ARCHITECTURE §7.3](../ARCHITECTURE.md)）。
 
@@ -13,7 +13,7 @@
 | 需求基线     | [PRD](../PRD.md) v1.0.0；Web 核心产品为当前交付线，AI 与小程序不阻塞首发                                 |
 | 开放 P0      | 权限分离（§3.2，既有）——行为/API 隐私旁路与服务端二次脱敏已随 2026-10-10 批次闭合                        |
 | npm 发布     | 搁置（注册被反滥用拦截，找他人账号；流程就绪见 PUBLISH.md）                                              |
-| 基础设施验证 | docker 环境已立（colima，2026-10-12）：Redis/CH 真实联调冒烟通过、Postgres healthy 待 P1 接线；k6 压测实测待跑                  |
+| 基础设施验证 | docker 环境已立（colima）：Redis/CH/PG 三容器 healthy，infra 全链路冒烟绿（P1 前置 + P1 接线）；k6 压测实测待跑                  |
 
 ## 2. 已完成里程碑（M0-M7，详情见 [LEDGER.md](./LEDGER.md) 附录 B）
 
@@ -35,7 +35,7 @@
 ### 3.1 [ ] M7.5 生产级存储架构（ADR-4 落地，设计见 [ARCHITECTURE §3.2](../ARCHITECTURE.md)）
 
 - [x] **P1 前置：联调环境立起**（2026-10-12）：本机立起 colima（brew 安装，走系统代理 127.0.0.1:7897）；docker-compose 新增 postgres 服务与 CLICKHOUSE_PASSWORD 凭证（官方镜像 24.x 起不允许 default 空密码匿名），三容器 healthy。冒烟过程发现并修复三个真实缺陷：① init.sql `quantileTDigest(0.5,0.75,0.95)` 多 level 非法——24.8 实测 NUMBER_OF_ARGUMENTS_DOESNT_MATCH，建表失败容器退出，改 `quantilesTDigest` 家族；② CH DateTime 边界格式（写入留毫秒 / 查询传完整 ISO）→ `toClickHouseDateTime` 统一 UTC 短格式，P2 挂账「时区格式不一致」实锤销案；③ utils/types 包 exports 缺 require 条件——server 以 CJS 解析报 ERR_PACKAGE_PATH_NOT_EXPORTED，vitest 走 ESM 不暴露，补双格式导出。验收通过：POST /report/batch → 204 → Redis 消费 → CH 四 kind 落库 → /api/overview 出数带服务端指纹（Node 20 + tsx；infra 开关现状为 REDIS_URL/CLICKHOUSE_URL 在位即启用，NODE_STORAGE 一键切换仍属 M7.5 目标）。270 测试全绿
-- [ ] **P1 Postgres 元数据**：projects 双密钥 / users / members / issues 状态机（fingerprint UNIQUE + first_seen/last_seen/event_count）/ alert_rules+history / releases / sourcemap_artifacts 全量 DDL，替换内存实现。验收：docker-compose 起库后全链路回归绿；CH 写入与 PG Issue 更新任一步失败时可重放或对账，不永久错计
+- [x] **P1 Postgres 元数据**（2026-10-12）：全量 DDL 8 表落地（docker/postgres/init.sql：users / projects 双密钥 / project_members / issues 状态机 UNIQUE(project_id,fingerprint) / alert_rules+history / releases / sourcemap_artifacts），compose 挂载 init.sql 全新安装验证；PG_URL 在位时四域切 PG 实现（IProjectStore / IAlertRuleStore / ISourcemapArtifactStore / IIssueStore 接口化，内存实现保留为零依赖形态），PROJECTS_JSON 幂等种子入库。**失败恢复设计**：ingest 时序 = PG upsertIssues（幂等，LEAST/GREATEST 无计数增量，失败抛出重试且 CH 未写无重复）→ CH saveBatch（重复计数为 P4 已知边界）→ count 对账覆写（CH 事实源，best-effort）。验收通过：docker-compose 起库后全链路回归绿（270+5 测试）；重放同信封 → PG 单行无错乱、count 与 CH 事实一致；冒烟实证 infra 全开（PG+Redis+CH）端到端含告警规则 PG 持久化。修复过程额外收获：AlertEngine 重入门闩在 async store 下静默吞调用（启动首评竞态）→ 改评估串行链排队。遗留：users/members 无运行时消费方（P3 启用）、releases 写入随 M8、NODE_STORAGE 一键切换仍属目标
 - [ ] **P2 CH 按 kind 分表**：error_events（含 resource_kind）/ perf_events / behavior_events / api_events 四表 + 各自物化视图，替代单宽表；须完整保留行为事件名/属性/PV 来源与成功 API 请求明细，不能沿用现有宽表只存通用列的缺口。验收：k6 冒烟 + 相同数据在 Memory/CH 的明细与聚合查询一致
 - [ ] **P3 权限分离**（= 下文 3.2，P0 消零）
 - [ ] **P4 gateway 加固**：先在 SPEC 定义稳定事件 ID、作用域与重试窗口，再实现幂等和令牌桶限流；MemoryStorage 的误去重先按 §3.3 修复。验收：同信封重放不重复计数；去重标记、CH 写入和 PG 更新之间任一步失败后可安全重试；限流语义单测

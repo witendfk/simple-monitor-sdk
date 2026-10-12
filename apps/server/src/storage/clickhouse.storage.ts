@@ -73,6 +73,24 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
     return await rs.json()
   }
 
+  async errorCountsByFingerprint(
+    apikey: string,
+    fingerprints: string[]
+  ): Promise<Map<string, number>> {
+    if (fingerprints.length === 0) return new Map()
+    const rs = await this.client.query({
+      query: `SELECT fingerprint, count() AS n
+              FROM events
+              WHERE apikey = {apikey:String} AND kind = 'error'
+                AND fingerprint IN {fps:Array(String)}
+              GROUP BY fingerprint`,
+      query_params: { apikey, fps: fingerprints },
+      format: 'JSONEachRow',
+    })
+    const rows = (await rs.json()) as Array<{ fingerprint: string; n: number }>
+    return new Map(rows.map((r) => [r.fingerprint, Number(r.n)]))
+  }
+
   async saveBatch(events: NormalizedEvent[]): Promise<void> {
     if (events.length === 0) return
     const rows: EventRow[] = []

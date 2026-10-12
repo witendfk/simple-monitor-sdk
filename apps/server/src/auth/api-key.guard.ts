@@ -13,17 +13,17 @@ import {
 } from '@nestjs/common'
 import type { Request } from 'express'
 import { PROJECTS_TOKEN } from '../report/report.controller'
-import { ProjectsService } from '../projects/projects.service'
+import type { IProjectStore } from '../projects/projects.service'
 
 /** class 型参数一律显式 @Inject（vitest esbuild 无 design:paramTypes 元数据） */
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
-  constructor(@Inject(PROJECTS_TOKEN) private readonly projects: ProjectsService) {}
+  constructor(@Inject(PROJECTS_TOKEN) private readonly projects: IProjectStore) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request & { apikey?: string }>()
     const apikey = req.header('x-api-key')
-    if (!apikey || !this.projects.exists(apikey)) {
+    if (!apikey || !(await this.projects.exists(apikey))) {
       throw new UnauthorizedException({ error: 'missing or unknown x-api-key' })
     }
     req.apikey = apikey

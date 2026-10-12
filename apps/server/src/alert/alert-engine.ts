@@ -9,7 +9,7 @@
  */
 import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common'
 import type { IEventStorage } from '../storage/event-storage'
-import { AlertRuleStore } from './rule-store'
+import type { IAlertRuleStore } from './rule-store'
 import { isWebhookUrlConnectAllowed } from './webhook-net'
 import {
   isSpike,
@@ -77,13 +77,18 @@ const DEFAULT_CHECK_INTERVAL_MS = 5 * 60_000
 export class AlertEngine implements OnApplicationShutdown {
   private readonly logger = new Logger(AlertEngine.name)
   private timer: ReturnType<typeof setInterval> | null = null
-  private evaluating = false
-  private readonly cooldown = new Map<string, number>()
   private running = false
+  private readonly cooldown = new Map<string, number>()
+  /**
+   * 评估串行链：store 异步化（M7.5 P1）后，start() 的启动首评会挂在 await 上——
+   * 旧「evaluating 布尔丢弃重入」会让并发调用方静默拿到 []（测试竞态实锤）。
+   * 改为排队串联：无并发评估（防双投递）且调用方必拿到自己那次的结果。
+   */
+  private evaluateChain: Promise<unknown> = Promise.resolve()
 
   constructor(
     private readonly storage: IEventStorage,
-    private readonly store: AlertRuleStore,
+    private readonly store: IAlertRuleStore,
     private readonly sender: WebhookSender,
     private readonly checkIntervalMs: number = DEFAULT_CHECK_INTERVAL_MS
   ) {}
@@ -110,26 +115,34 @@ export class AlertEngine implements OnApplicationShutdown {
     this.stop()
   }
 
-  /** 评估全部启用规则；单规则异常不影响其他规则（错误隔离纪律） */
-  async evaluateAll(now = Date.now()): Promise<AlertFire[]> {
-    if (!this.running || this.evaluating) return []
-    this.evaluating = true
+  /** 评估全部启用规则；单规则异常不影响其他规则（错误隔离纪律）。调用排队串行执行 */
+  evaluateAll(now = Date.now()): Promise<AlertFire[]> {
+    const next = this.evaluateChain.then(
+      () => this.doEvaluateAll(now),
+      () => this.doEvaluateAll(now)
+    )
+    // 链上吞掉异常防后续排队者被拒（doEvaluateAll 自身不抛——单规则错误已隔离）
+    this.evaluateChain = next.then(
+      () => undefined,
+      () => undefined
+    )
+    return next
+  }
+
+  private async doEvaluateAll(now: number): Promise<AlertFire[]> {
+    if (!this.running) return []
     const fires: AlertFire[] = []
-    try {
-      for (const rule of this.store.list()) {
-        if (!rule.enabled) continue
-        if (!this.cooldownPassed(rule, now)) continue
-        try {
-          const fire = await this.evaluateRule(rule, now)
-          if (fire) {
-            fires.push(fire)
-          }
-        } catch (error) {
-          this.logger.warn(`rule ${rule.id} evaluation failed: ${String(error)}`)
+    for (const rule of await this.store.list()) {
+      if (!rule.enabled) continue
+      if (!this.cooldownPassed(rule, now)) continue
+      try {
+        const fire = await this.evaluateRule(rule, now)
+        if (fire) {
+          fires.push(fire)
         }
+      } catch (error) {
+        this.logger.warn(`rule ${rule.id} evaluation failed: ${String(error)}`)
       }
-    } finally {
-      this.evaluating = false
     }
     return fires
   }
@@ -207,7 +220,7 @@ export class AlertEngine implements OnApplicationShutdown {
         alert: { ruleId: fire.ruleId, ruleName: fire.ruleName, ...fire.context },
       })
       this.cooldown.set(rule.id, Date.now())
-      this.store.recordFire(fire)
+      await this.store.recordFire(fire)
       this.logger.log(`alert fired: ${fire.ruleName} — ${fire.message}`)
       return true
     } catch (error) {

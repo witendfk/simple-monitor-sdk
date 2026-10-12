@@ -5,12 +5,17 @@
  * 错误详情查询时按 release + URL 匹配工件，用 trace-mapping 把
  * url:line:column 还原为原始 source:line:column:name。
  *
- * 存储为内存实现（重启即失，M4 后续切片接 Postgres/对象存储——接口保持稳定）。
+ * DIP（M7.5 P1）：ISourcemapArtifactStore 接口 + 双实现——
+ *  - MemorySourcemapArtifactStore（内存，重启即失）；
+ *  - PgSourcemapArtifactStore（storage/pg/，PG_URL 在位时启用）。
+ * TraceMap 解析缓存保留在服务内存（解析一次多次查询，与存储形态无关）。
  * 匹配策略：URL 精确命中优先，其次后缀匹配（bundle 带域名/hash 时 CLI 侧
  * 通常传文件名或路径，后缀匹配覆盖 CDN 域名差异）。
  */
 import { Injectable } from '@nestjs/common'
 import { TraceMap, originalPositionFor, type SourceMapInput } from '@jridgewell/trace-mapping'
+
+export const SOURCEMAP_ARTIFACT_STORE_TOKEN = 'SOURCEMAP_ARTIFACT_STORE'
 
 export interface SourcemapArtifact {
   apikey: string
@@ -20,6 +25,33 @@ export interface SourcemapArtifact {
   /** source map JSON（原始内容存储，查询时解析） */
   mapJson: string
   uploadedAt: number
+}
+
+export interface ISourcemapArtifactStore {
+  upsert(artifact: SourcemapArtifact): Promise<void>
+  listByRelease(apikey: string, release: string): Promise<SourcemapArtifact[]>
+  count(): Promise<number>
+}
+
+/** 内存实现：本地零依赖形态与单测用 */
+export class MemorySourcemapArtifactStore implements ISourcemapArtifactStore {
+  private readonly artifacts = new Map<string, SourcemapArtifact>()
+
+  private key(apikey: string, release: string, url: string): string {
+    return `${apikey}|${release}|${url}`
+  }
+
+  async upsert(artifact: SourcemapArtifact): Promise<void> {
+    this.artifacts.set(this.key(artifact.apikey, artifact.release, artifact.url), artifact)
+  }
+
+  async count(): Promise<number> {
+    return this.artifacts.size
+  }
+
+  async listByRelease(apikey: string, release: string): Promise<SourcemapArtifact[]> {
+    return [...this.artifacts.values()].filter((a) => a.apikey === apikey && a.release === release)
+  }
 }
 
 /** 符号化后的帧：原始位置信息（无法还原时 original 为空） */
@@ -38,46 +70,46 @@ export interface SymbolicatedFrame {
 
 @Injectable()
 export class SourcemapService {
-  /** key: apikey|release|url */
-  private readonly artifacts = new Map<string, SourcemapArtifact>()
+  private readonly store: ISourcemapArtifactStore
   /** 已解析的 map 缓存（TraceMap 解析一次多次查询） */
   private readonly parsed = new Map<string, TraceMap>()
 
-  private key(apikey: string, release: string, url: string): string {
-    return `${apikey}|${release}|${url}`
+  constructor(store: ISourcemapArtifactStore = new MemorySourcemapArtifactStore()) {
+    this.store = store
   }
 
-  upload(artifact: SourcemapArtifact): void {
-    this.artifacts.set(this.key(artifact.apikey, artifact.release, artifact.url), artifact)
-    this.parsed.delete(this.key(artifact.apikey, artifact.release, artifact.url))
+  async upload(artifact: SourcemapArtifact): Promise<void> {
+    await this.store.upsert(artifact)
+    this.parsed.delete(`${artifact.apikey}|${artifact.release}|${artifact.url}`)
   }
 
-  count(): number {
-    return this.artifacts.size
+  async count(): Promise<number> {
+    return this.store.count()
   }
 
   /** release + url → 工件（精确 → 后缀） */
-  private find(apikey: string, release: string, url: string): SourcemapArtifact | null {
-    const exact = this.artifacts.get(this.key(apikey, release, url))
+  private async find(
+    apikey: string,
+    release: string,
+    url: string
+  ): Promise<SourcemapArtifact | null> {
+    const candidates = await this.store.listByRelease(apikey, release)
+    const exact = candidates.find((a) => a.url === url)
     if (exact) return exact
-    for (const artifact of this.artifacts.values()) {
-      if (artifact.apikey !== apikey || artifact.release !== release) continue
-      if (url.endsWith(artifact.url) || artifact.url.endsWith(url)) return artifact
-    }
-    return null
+    return candidates.find((a) => url.endsWith(a.url) || a.url.endsWith(url)) ?? null
   }
 
   /** 单帧符号化：无法匹配工件/还原失败时返回原帧（original 为 null，不阻断） */
-  symbolicateFrame(
+  async symbolicateFrame(
     apikey: string,
     release: string | undefined,
     frame: SymbolicatedFrame
-  ): SymbolicatedFrame {
+  ): Promise<SymbolicatedFrame> {
     if (!release || !frame.url || !frame.line) return { ...frame, original: null }
-    const artifact = this.find(apikey, release, frame.url)
+    const artifact = await this.find(apikey, release, frame.url)
     if (!artifact) return { ...frame, original: null }
 
-    const cacheKey = this.key(artifact.apikey, artifact.release, artifact.url)
+    const cacheKey = `${artifact.apikey}|${artifact.release}|${artifact.url}`
     let map = this.parsed.get(cacheKey)
     if (!map) {
       try {
@@ -108,11 +140,11 @@ export class SourcemapService {
   }
 
   /** 整组堆栈符号化 */
-  symbolicateStack(
+  async symbolicateStack(
     apikey: string,
     release: string | undefined,
     frames: SymbolicatedFrame[]
-  ): SymbolicatedFrame[] {
-    return frames.map((f) => this.symbolicateFrame(apikey, release, f))
+  ): Promise<SymbolicatedFrame[]> {
+    return Promise.all(frames.map((f) => this.symbolicateFrame(apikey, release, f)))
   }
 }

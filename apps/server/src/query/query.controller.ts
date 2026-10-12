@@ -69,7 +69,7 @@ export class QueryController {
     const detail = await this.storage.errorDetail(req.apikey, fingerprint)
     if (!detail) throw new NotFoundException({ error: 'fingerprint not found' })
     const rawFrames = detail.error?.stackFrames ?? []
-    const symbolicatedStack = this.sourcemaps.symbolicateStack(
+    const symbolicatedStack = await this.sourcemaps.symbolicateStack(
       detail.apikey,
       detail.release,
       rawFrames.map((f) => ({ ...f }))
@@ -83,7 +83,10 @@ export class QueryController {
    */
   @Post('sourcemaps')
   @HttpCode(201)
-  uploadSourcemap(@Req() req: AuthedRequest, @Body() body: unknown): { ok: true; stored: number } {
+  async uploadSourcemap(
+    @Req() req: AuthedRequest,
+    @Body() body: unknown
+  ): Promise<{ ok: true; stored: number }> {
     const schema = z.object({
       release: z.string().min(1),
       url: z.string().min(1),
@@ -104,14 +107,14 @@ export class QueryController {
       throw new BadRequestException({ error: 'map missing version/mappings' })
     }
     const { release, url, map } = parsed.data
-    this.sourcemaps.upload({
+    await this.sourcemaps.upload({
       apikey: req.apikey,
       release,
       url,
       mapJson: map,
       uploadedAt: Date.now(),
     })
-    return { ok: true, stored: this.sourcemaps.count() }
+    return { ok: true, stored: await this.sourcemaps.count() }
   }
 
   /** GET /api/behaviors?limit=20 —— 最近行为事件（M7 冒烟；M9 事件浏览器雏形） */

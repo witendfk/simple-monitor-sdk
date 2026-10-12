@@ -49,13 +49,13 @@ export class ReportController {
     const envelope: TransportEnvelope = parsed.data
 
     // 2. 鉴权：未注册 apikey 直接 403
-    if (!this.projects.exists(envelope.auth.apiKey)) {
+    if (!(await this.projects.exists(envelope.auth.apiKey))) {
       res.status(403).json({ error: 'unknown apikey' })
       return
     }
 
     // 3. 限流：超阈值 429 + Retry-After
-    const project = this.projects.get(envelope.auth.apiKey)
+    const project = await this.projects.get(envelope.auth.apiKey)
     const limit = await this.rateLimiter.check(
       envelope.auth.apiKey,
       project?.rateLimitPerMin ?? 1000

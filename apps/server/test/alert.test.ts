@@ -53,6 +53,7 @@ function stubStorage(errorCount: number): IEventStorage {
     errorDetail: async () => null,
     performanceQuantiles: async () => ({ metric: 'x', count: 1, p50: 100, p75: 100, p95: 100 }),
     recentBehaviors: async () => [],
+    errorCountsByFingerprint: async () => new Map(),
   }
 }
 
@@ -67,20 +68,23 @@ describe('AlertEngine', () => {
     vi.useRealTimers()
   })
 
-  function makeEngine(
+  // store 异步化后 start() 的启动首评挂微任务——先等它空转完成（此时无规则），
+  // 测试自建的规则再经显式 evaluateAll 评估，消除启动首评抢跑消费的竞态
+  async function makeEngine(
     storage: IEventStorage,
     webhook: WebhookSender = sender,
     intervalMs = 5 * 60_000
-  ): { engine: AlertEngine; store: AlertRuleStore } {
+  ): Promise<{ engine: AlertEngine; store: AlertRuleStore }> {
     const store = new AlertRuleStore()
     const engine = new AlertEngine(storage, store, webhook, intervalMs)
     engine.start()
+    await engine.evaluateAll()
     return { engine, store }
   }
 
   it('突增规则触发：投递 webhook 载荷含结构化上下文并进入冷却记录', async () => {
     const storage = stubStorage(50) // 近 15min 50 条，基线均值 10 → 阈值 30 → 触发
-    const { engine, store } = makeEngine(
+    const { engine, store } = await makeEngine(
       {
         ...storage,
         // 签名 (apikey, sinceMs)：按规则归属项目查询（apikey 隔离）
@@ -114,12 +118,12 @@ describe('AlertEngine', () => {
     expect(url).toBe('https://hooks.example.com/x')
     const content = (payload as { content?: { text?: string } }).content
     expect(content?.text).toContain('错误突增')
-    expect(store.listFires()).toHaveLength(1)
+    expect(await store.listFires()).toHaveLength(1)
   })
 
   it('冷却窗口内不重复投递（防轰炸）', async () => {
     const storage = stubStorage(50)
-    const { engine, store } = makeEngine(storage, sender)
+    const { engine, store } = await makeEngine(storage, sender)
     store.create({
       apikey: 'k',
       type: 'error_spike',
@@ -141,7 +145,7 @@ describe('AlertEngine', () => {
 
   it('webhook 投递失败：不进入冷却（下轮重试），不抛出', async () => {
     const failingSender = { send: vi.fn().mockRejectedValue(new Error('hook down')) }
-    const { engine, store } = makeEngine(stubStorage(50), failingSender)
+    const { engine, store } = await makeEngine(stubStorage(50), failingSender)
     store.create({
       apikey: 'k',
       type: 'error_spike',
@@ -152,7 +156,7 @@ describe('AlertEngine', () => {
       config: { windowMinutes: 15, baselineMinutes: 360, minCount: 20, multiplier: 3 },
     })
     await expect(engine.evaluateAll()).resolves.toHaveLength(0)
-    expect(store.listFires()).toHaveLength(0) // 投递失败不记触发
+    expect(await store.listFires()).toHaveLength(0) // 投递失败不记触发
   })
 
   it('阈值规则：P75 超阈触发', async () => {
@@ -160,8 +164,7 @@ describe('AlertEngine', () => {
     const q = vi
       .fn()
       .mockResolvedValue({ metric: 'lcp', count: 5, p50: 1000, p75: 5000, p95: 8000 })
-    const { engine } = makeEngine({ ...storage, performanceQuantiles: q }, sender)
-    const store = (engine as unknown as { store: AlertRuleStore }).store
+    const { engine, store } = await makeEngine({ ...storage, performanceQuantiles: q }, sender)
     store.create({
       apikey: 'k',
       type: 'perf_threshold',
@@ -178,7 +181,7 @@ describe('AlertEngine', () => {
   })
 
   it('enabled=false 的规则被跳过', async () => {
-    const { engine, store } = makeEngine(stubStorage(50), sender)
+    const { engine, store } = await makeEngine(stubStorage(50), sender)
     store.create({
       apikey: 'k',
       type: 'error_spike',

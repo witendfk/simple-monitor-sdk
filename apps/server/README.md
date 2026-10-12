@@ -70,6 +70,7 @@ k6 run -e TARGET=http://localhost:3000 -e RATE=5000 apps/server/k6/report.js
 | `PORT` | 3000 | 监听端口 |
 | `REDIS_URL` | —（内存队列） | 启用 Redis Stream 削峰 + pending 重投 + 死信 |
 | `CLICKHOUSE_URL` | —（内存存储） | 启用 ClickHouse 明细存储 + 物化视图聚合 |
+| `PG_URL` | —（内存元数据） | 启用 Postgres 元数据域（项目双密钥/告警规则/SourceMap 工件/Issue 状态机，M7.5 P1） |
 | `CLICKHOUSE_USERNAME` | default | ClickHouse 用户名 |
 | `CLICKHOUSE_PASSWORD` | —（空） | ClickHouse 密码（官方镜像 24.x 起不允许 default 空密码匿名；docker-compose 形态为 `monitor`） |
 | `PROJECTS_JSON` | demo-key | 项目注册表 `[{"apikey","name","rateLimitPerMin"}]` |

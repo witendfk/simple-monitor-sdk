@@ -142,6 +142,22 @@ export class MemoryStorage implements IEventStorage {
         ...(e.behavior ?? {}),
       }))
   }
+
+  /** 指纹错误计数现算（Issue 对账的事实源，与 CH 聚合查询语义一致） */
+  async errorCountsByFingerprint(
+    apikey: string,
+    fingerprints: string[]
+  ): Promise<Map<string, number>> {
+    const wanted = new Set(fingerprints)
+    const counts = new Map<string, number>()
+    for (const e of this.events) {
+      if (e.apikey !== apikey || e.kind !== 'error') continue
+      const fp = e.error?.fingerprint
+      if (!fp || !wanted.has(fp)) continue
+      counts.set(fp, (counts.get(fp) ?? 0) + 1)
+    }
+    return counts
+  }
 }
 
 /** 最近邻分位（近似即可：演示/单测场景，CH 侧用 quantileTDigest） */
