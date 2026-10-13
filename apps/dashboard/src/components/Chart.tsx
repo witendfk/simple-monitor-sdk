@@ -28,8 +28,10 @@ export function Chart({
     }
   }, [])
 
+  // 暗色设计系统：透明底 + 亮色文字基线（视图自身的 option 字段优先覆盖）
   useEffect(() => {
-    chartRef.current?.setOption(option, true)
+    const darkBase = { backgroundColor: 'transparent', textStyle: { color: '#a1a1aa' } }
+    chartRef.current?.setOption({ ...darkBase, ...option }, false)
   }, [option])
 
   return <div ref={ref} style={{ width: '100%', height }} />
