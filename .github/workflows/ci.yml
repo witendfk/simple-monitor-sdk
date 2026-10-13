@@ -60,11 +60,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: 组装依赖解析环境（workspace 软链 + zod 运行时依赖）
         run: |
-          mkdir -p /smoke/node_modules/@simple-monitor
-          ln -s "$GITHUB_WORKSPACE/packages/types" /smoke/node_modules/@simple-monitor/types
-          ln -s "$GITHUB_WORKSPACE/packages/utils" /smoke/node_modules/@simple-monitor/utils
-          ln -s "$GITHUB_WORKSPACE/packages/protocol" /smoke/node_modules/@simple-monitor/protocol
+          mkdir -p /smoke
           cd /smoke && npm init -y >/dev/null && npm install zod@3.24.1 --no-audit --no-fund
+          mkdir -p node_modules/@simple-monitor
+          ln -s "$GITHUB_WORKSPACE/packages/types" node_modules/@simple-monitor/types
+          ln -s "$GITHUB_WORKSPACE/packages/utils" node_modules/@simple-monitor/utils
+          ln -s "$GITHUB_WORKSPACE/packages/protocol" node_modules/@simple-monitor/protocol
       - name: Node 14 require 冒烟断言
         run: |
           NODE_PATH=/smoke/node_modules node -e "
