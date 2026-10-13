@@ -61,7 +61,7 @@ k6 run -e TARGET=http://localhost:3000 -e RATE=5000 apps/server/k6/report.js
 - **重复消费未做去重**：at-least-once 语义下重试/重投/崩溃恢复会产生重复计数（errorId 已透传入库，去重方案待落地）。
 - **sourcemap 上传独立 20MB body 上限**：真实项目 MB 级 map 可正常上传；其余路由维持 256KB。
 
-完整的工程质量评估、风险优先级和验收条件见 [docs/tasks/CURRENT.md](../../docs/tasks/CURRENT.md)。在公开 key 的管理权限分离完成前，不应将当前形态作为公网多项目服务部署。
+完整的工程质量评估、风险优先级和验收条件见 [docs/tasks/CURRENT.md](../../docs/tasks/CURRENT.md)。权限分离已交付（M7.5 P3）：公开上报 key 仅用于 /report/batch，/api/** 需管理会话（dashboard 登录）或项目密钥（x-api-key，SourceMap CLI/CI）。公网部署仍须满足：① 覆盖默认管理员账号/密码与会话签名密钥 ② 全站 HTTPS（会话 cookie 安全前提）③ 多副本部署时登录限流为进程级计数的边界知悉。
 
 ## 配置（环境变量）
 
@@ -71,6 +71,9 @@ k6 run -e TARGET=http://localhost:3000 -e RATE=5000 apps/server/k6/report.js
 | `REDIS_URL` | —（内存队列） | 启用 Redis Stream 削峰 + pending 重投 + 死信 |
 | `CLICKHOUSE_URL` | —（内存存储） | 启用 ClickHouse 明细存储 + 物化视图聚合 |
 | `PG_URL` | —（内存元数据） | 启用 Postgres 元数据域（项目双密钥/告警规则/SourceMap 工件/Issue 状态机，M7.5 P1） |
+| `ADMIN_ACCOUNT` | admin | 管理员账号（登录 /auth/login） |
+| `ADMIN_PASSWORD` | demo-password | 管理员密码（生产部署必须覆盖；仅首次种子入库，重跑不改已设密码） |
+| `ADMIN_SESSION_SECRET` | dev-insecure-session-secret | 会话 HMAC 签名密钥（生产部署必须覆盖） |
 | `CLICKHOUSE_USERNAME` | default | ClickHouse 用户名 |
 | `CLICKHOUSE_PASSWORD` | —（空） | ClickHouse 密码（官方镜像 24.x 起不允许 default 空密码匿名；docker-compose 形态为 `monitor`） |
 | `PROJECTS_JSON` | demo-key | 项目注册表 `[{"apikey","name","rateLimitPerMin"}]` |

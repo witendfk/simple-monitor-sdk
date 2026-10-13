@@ -128,7 +128,7 @@ zod schema 为单一事实来源，TS 类型由 zod 推导；SDK 发送端（生
 - 错误响应：400 校验失败（整包拒绝）｜403 未注册 apikey｜413 超 body 上限｜429 限流（带 `Retry-After`）。
 - 幂等：当前没有正确的服务端事件级幂等；SDK errorId 用于客户端流量去重，fingerprint 用于错误分组。Memory 存储现按 `apikey+errorId` 永久去重，会误删跨会话及 SDK 允许的合法重复错误，不能作为重试幂等。M7.5 P4 须先定义稳定的事件 ID 与去重窗口，再实现重放去重。
 
-### 4.2 查询 API（`/api/*` 当前使用 `x-api-key`，权限分离见 CURRENT P0）
+### 4.2 查询 API（`/api/*` 经 ManagementGuard：会话 cookie 或项目密钥 `x-api-key`，公开上报 key 不再通行——M7.5 P3）
 
 | 端点                                               | 内容                                                                                      | 状态                    |
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------- |
@@ -157,7 +157,7 @@ zod schema 为单一事实来源，TS 类型由 zod 推导；SDK 发送端（生
 | 告警公式          | error_spike：近 15min 错误数 > max(20, 前 6h 均值×3)；perf_threshold：如 LCP P75 > 4000ms 持续 2 桶；minCount 低流量兜底                                                        | ✅                      |
 | 告警防轰炸        | webhook 投递后 15min 冷却；投递失败不进冷却，下轮重试；fetch 5s 超时                                                                                                            | ✅                      |
 | webhook SSRF 防护 | 双道：字面值 `net.BlockList`（私网/保留/环回段）+ 发送前 DNS 解析复核 + 重定向逐跳复核（`redirect: 'manual'`，≤3 跳）；残余 TOCTOU 窗口已在 server README 声明                  | ✅                      |
-| 权限模型          | 现状：公开上报 key（apikey）同时放行 `/api/**` 查询与管理接口——**公网部署前置缺口**                                                                                             | 🚧 P0 切片              |
+| 权限模型          | ManagementGuard 双通道（M7.5 P3）：dashboard 会话 cookie（HMAC 签名 7 天）或项目密钥（SourceMap CLI/CI，sha256 校验）；公开上报 key 仅用于 /report/batch 信封体 | ✅ P3 交付（公网部署仍须 HTTPS + 覆盖默认管理员/会话密钥） |
 
 ## 6. 已知边界声明
 

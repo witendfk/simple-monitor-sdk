@@ -11,7 +11,7 @@
 | 里程碑       | M0-M7 基础能力已落地；§3.3 收口（6/7）；M7.5 P1 前置/P1/P2 已完成；**看板 UI 定稿**（NightOwl 暗色 21 页原型 = P5/M8/M9 的 UI 基准）；进行中 M7.5 P3 权限分离（server 侧已绿待收尾）→ P4 gateway → P5 按缺口清单实施；手动 API/错误过滤/consent 定档「M8 前小切片」 |
 | 测试         | 最近记录为 268 tests；CI 当前执行 typecheck×3 / lint / build / test / conformance，尚无 size 步骤        |
 | 需求基线     | [PRD](../PRD.md) v1.0.0；Web 核心产品为当前交付线，AI 与小程序不阻塞首发                                 |
-| 开放 P0      | 权限分离（§3.2，既有）——行为/API 隐私旁路与服务端二次脱敏已随 2026-10-10 批次闭合                        |
+| 开放 P0      | **无**——权限分离（§3.2）已随 M7.5 P3 闭合（2026-10-13）；此前隐私旁路亦已闭合                        |
 | npm 发布     | 搁置（注册被反滥用拦截，找他人账号；流程就绪见 PUBLISH.md）                                              |
 | 基础设施验证 | docker 环境已立（colima）：三容器 healthy，P1 接线 + P2 分表全链路绿；k6 已实测（2k/s p95 4.8ms 达标，5k/s 延迟优化进 4.3）                  |
 
@@ -49,13 +49,13 @@
   - 验收更新：对照 design/dashboard-v1.html 逐页出数（不再是 PRD §6 的粗粒度描述）
   - 📊 **全栈评估量化**（2026-10-13 对照定稿 UI）：服务端路由 12 个，20 页看板的后端覆盖 = 就绪 4（登录/异常/详情/告警）+ 部分 4（概览/性能/事件/SourceMap 列表）+ 缺失 12（M8×3、M9×5、日志前置、AI×2、实时）；看板前端现状 892 行浅色 5 视图（零测试）vs 定稿 21 页暗色——P5+M8+M9 前端 ≈ 设计系统+壳+20 页全新构建（原型 HTML 2400 行即蓝本）；建议 P5 拆两批：P5a 设计系统 token+应用壳+登录、P5b 页面迁移
 
-### 3.2 [ ] 独立切片：服务端权限分离（既有 P0）
+### 3.2 [x] 独立切片：服务端权限分离（既有 P0）→ **[x] 2026-10-13 完成**
 
-**问题**：浏览器 SDK 必须携带的公开 apikey 同时放行 `/api/**` 查询、告警管理、SourceMap 上传——持有 key 即可读取项目错误、改告警规则、上传 SourceMap（`apps/server/src/auth/api-key.guard.ts:23`）。
+**交付**：ManagementGuard 双通道管理鉴权替代 ApiKeyGuard——① dashboard 会话登录（scrypt 密码 + HMAC 签名 HttpOnly cookie 7 天，POST /auth/login·logout、GET /auth/me·session-check）② 项目密钥（x-api-key 对 secret_key_hash sha256+timingSafeEqual，SourceMap CLI/CI 非交互通道）。公开上报 key 仅用于 /report/batch 信封体。登录暴力破解防护（同账号 5 次锁 15 分钟）。配置表单化：ADMIN_ACCOUNT/ADMIN_PASSWORD/ADMIN_SESSION_SECRET env 种子+签名密钥（生产必须覆盖，README 边界）。
 
-**范围**：分离公开上报标识与服务端读写身份（管理凭证只留服务端，users 表归 M7.5 P1）；Guard 分层；dashboard 使用服务端会话登录，不把管理密钥注入 Vite 构建产物；文档与部署说明同步。
+**dashboard**：登录态门控（App 壳 /auth/me 校验 + 401 全局事件回落登录视图）+ LoginView v2（视觉稿定稿的暗色分屏）+ 退出；管理密钥零注入构建产物（凭据只经用户输入换会话）。
 
-**验收条件**：分离后公开 key 无法访问查询/告警/SourceMap API（401/403 用例锁定）；管理凭证全功能回归；README 边界声明更新。不依赖 M7-M10，npm 发布前必须完成。
+**验收通过**：公开 key 打 /api/overview·告警·SourceMap 全部 401（e2e 用例锁定）；会话与项目密钥双通道全功能回归；管理凭证（admin/demo-password）e2e 覆盖。边界声明：单管理员全局视图（多成员 RBAC 剪裁线）、生产须覆盖默认凭证 + HTTPS。范围调整：用户表 email→account（看板定稿为账号密码登录）；AI apiKey 由 env-only 改表单只写不读（ADR-9 演进，待 M10 落地时同步 DESIGN）。
 
 ### 3.3 [ ] PRD 对码评审修复清单（2026-10-10）
 
