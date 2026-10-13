@@ -2,7 +2,7 @@
  * 看板壳：tab 切换四个视图 + 10s 自动刷新 + 错误详情下钻
  */
 import { useEffect, useState } from 'react'
-import { authApi, AuthRequiredError } from './api'
+import { authApi } from './api'
 import { LoginView } from './components/LoginView'
 import { OverviewView } from './views/OverviewView'
 import { ErrorsView } from './views/ErrorsView'
@@ -42,6 +42,13 @@ export default function App() {
     setAuthState('anon')
   }
 
+  // 10s 自动刷新（概览/性能视图消费 refreshKey；详情页不刷避免打断阅读）
+  useEffect(() => {
+    if (tab === 'errors' && fingerprint) return
+    const timer = setInterval(() => setRefreshKey((k) => k + 1), 10_000)
+    return () => clearInterval(timer)
+  }, [tab, fingerprint])
+
   if (authState === 'checking') {
     return <div className="login-wrap muted">会话校验中…</div>
   }
@@ -62,13 +69,6 @@ export default function App() {
     )
   }
 
-  // 10s 自动刷新（概览/性能视图消费 refreshKey；详情页不刷避免打断阅读）
-  useEffect(() => {
-    if (tab === 'errors' && fingerprint) return
-    const timer = setInterval(() => setRefreshKey((k) => k + 1), 10_000)
-    return () => clearInterval(timer)
-  }, [tab, fingerprint])
-
   const openDetail = (fp: string): void => {
     setFingerprint(fp)
     setTab('errors')
@@ -77,7 +77,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>Simple Monitor</h1>
+        <h1>NightOwl</h1>
         <nav className="tabs">
           {(
             [

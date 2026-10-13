@@ -89,7 +89,9 @@ export const PG_POOL_TOKEN = 'PG_POOL'
         pool: Pool | null,
         _projects: IProjectStore
       ): Promise<IUserStore> => {
-        const store = pool ? new PgUserStore(pool) : new MemoryUserStore(parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key')
+        const store = pool
+          ? new PgUserStore(pool)
+          : new MemoryUserStore(parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key')
         const firstKey = parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key'
         await store.ensureUser(
           config.adminEmail ?? 'admin@demo.local',
@@ -108,8 +110,7 @@ export const PG_POOL_TOKEN = 'PG_POOL'
         pool: Pool | null,
         _projects: IProjectStore
       ): Promise<IUserStore> => {
-        const firstKey =
-          parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key'
+        const firstKey = parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key'
         const store = pool ? new PgUserStore(pool) : new MemoryUserStore(firstKey)
         await store.ensureUser(
           config.adminEmail ?? 'admin@demo.local',

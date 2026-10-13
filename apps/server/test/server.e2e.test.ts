@@ -180,7 +180,9 @@ describe('server e2e（内存全链路）', () => {
     const badSecret = await request(server).get('/api/overview').set('x-api-key', 'ghost')
     expect(badSecret.status).toBe(401)
     // 通道一：项目密钥（CI/CLI 非交互）
-    const secretKey = await request(server).get('/api/overview').set('x-api-key', 'e2e-project-secret')
+    const secretKey = await request(server)
+      .get('/api/overview')
+      .set('x-api-key', 'e2e-project-secret')
     expect(secretKey.status).toBe(200)
     // 错误密码登录 → 401
     const badLogin = await request(server)

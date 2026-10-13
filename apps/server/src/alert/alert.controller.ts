@@ -18,14 +18,12 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common'
-import type { Request } from 'express'
 import { z } from 'zod'
 import { CONFIG_TOKEN, type ServerConfig } from '../config'
 import { ManagementGuard, type AuthedRequest } from '../auth/management.guard'
 import { ALERT_RULE_STORE_TOKEN, type IAlertRuleStore } from './rule-store'
 import { isSafeWebhookUrl } from './webhook-url'
 import type { AlertFire, AlertRule } from './alert.types'
-
 
 const SpikeConfigSchema = z.object({
   windowMinutes: z.number().int().positive().max(1440).default(15),

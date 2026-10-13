@@ -17,7 +17,6 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common'
-import type { Request } from 'express'
 import { z } from 'zod'
 import { PROJECTS_TOKEN } from '../report/report.controller'
 import { ProjectsService } from '../projects/projects.service'
@@ -26,7 +25,6 @@ import { STORAGE_TOKEN, type IEventStorage } from '../storage/event-storage'
 import { SourcemapService } from '../ingest/sourcemap.service'
 
 /** class 型参数一律显式 @Inject（vitest esbuild 无 design:paramTypes 元数据） */
-
 
 @Controller('api')
 @UseGuards(ManagementGuard)
