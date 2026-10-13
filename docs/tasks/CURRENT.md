@@ -45,6 +45,7 @@
   - ❌ M8 页面（UI 已定稿，等 API）：API 监控（调用量/成功率/分位/接口排行/失败样本+traceId）· 页面访问（PV/UV/来源/设备/页面TOP/utm 归因视图）· 静态资源（慢TOP/失败列表）
   - ❌ M9 页面（UI 已定稿，等聚合查询）：事件分析（查询构建器：按事件/属性/页面聚合+趋势+TOP-N）· 事件详情（单事件属性分布+原始样本）· 漏斗（windowFunnel）· 留存（retention 矩阵+趋势）· 曝光
   - ❌ 新发现的底层缺口：**log() 日志未落库**（自定义打点信封通道静默丢失，P2 挂账既有——日志查询页的前置）；**AI 诊断**（M10，设计演进：apiKey 由 env-only 改表单只写不读，需同步 ADR-9/DESIGN）
+  - 📋 **SDK 数据闭环审计**（2026-10-13 对照定稿 UI）：绝大部分页面字段已满足（设备分布含 netType ✓、缓存判定 transferSize ✓、AJAX 现场 http 全字段 ✓、utm 归因 ✓）。**4 项"部分满足"**——NT 阶段分解 / TTFB / LongTask 三档 / RT 阶段聚合的数据均已上报但**嵌在 perf metricDetail JSON 内**，分位与分布聚合不可直接查询：M8/M9 实施时二选一（SDK 拆独立指标行，或 CH 侧 JSONExtract）；**2 项"缺失"**——log() 通道静默丢失（见上）、captureException 未实现（异常分析"自定义"分类卡，M8 前小切片既有）
   - 验收更新：对照 design/dashboard-v1.html 逐页出数（不再是 PRD §6 的粗粒度描述）
 
 ### 3.2 [ ] 独立切片：服务端权限分离（既有 P0）
