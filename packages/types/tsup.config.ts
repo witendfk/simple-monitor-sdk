@@ -4,7 +4,7 @@ export default defineConfig({
   entry: ['src/index.ts'],
   format: ['esm', 'cjs'],
   dts: false,
-  clean: false,
+  clean: true,
   sourcemap: true,
   target: 'es2020',
   splitting: false,

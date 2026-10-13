@@ -1,20 +1,70 @@
 /**
- * ClickHouse 存储实现（生产形态）：明细行存 + SQL 下推聚合。
+ * ClickHouse 存储（M7.5 P2 分表形态）：error/perf/behavior/api 四表替代 M4 单宽表，
+ * 事实 append-only，可变状态归 PG（ADR-4 职责铁律）。
  *
- * 表结构见 docker/clickhouse/init.sql（MergeTree，TTL 30 天）。
- * 全部查询使用参数化（安全清单：禁止字符串拼接 SQL）。
+ * 明细完整性（P2 验收）：behavior_events 保留事件名/属性/PV 来源（UTM）/停留时长，
+ * api_events 保留 method/url/status/duration/trace_id——与 Memory 形态明细等价
+ * （equivalence 测试锁定）。聚合优先读物化视图的口径由 M8 查询层接入，本层直查明细。
  */
-import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common'
+import { Injectable, type OnApplicationShutdown } from '@nestjs/common'
 import { createClient, type ClickHouseClient } from '@clickhouse/client'
+import { toClickHouseDateTime } from './clickhouse-datetime'
 import type { NormalizedEvent } from '../ingest/normalize'
 import type { ErrorGroup, IEventStorage, OverviewStats, PerfQuantiles } from './event-storage'
+import { behaviorDetailFields } from './event-storage'
 
-/** events 行（perf 一行一指标，unwind 后写多行） */
-interface EventRow {
+/** 错误行（error_events 表，列名 snake_case） */
+interface ErrorRow extends HeadRow {
+  type: string
+  resource_kind: string
+  errorName: string
+  errorLevel: string
+  errorId: string
+  fingerprint: string
+  componentName: string
+  message: string
+  message_head: string
+  stack_frames: string
+  http: string
+  breadcrumbs: string
+}
+
+/** perf 一行一指标（unwind 后） */
+interface PerfRow extends HeadRow {
+  metric_name: string
+  metric_value: number
+  metric_score: number
+  metric_detail: string
+}
+
+interface BehaviorRow extends HeadRow {
+  behavior_type: string
+  name: string
+  props: string
+  url: string
+  load_type: string
+  referrer_host: string
+  utm_source: string
+  utm_medium: string
+  utm_campaign: string
+  selector: string
+  dwell_ms: number
+  from_source: string
+}
+
+interface ApiRow extends HeadRow {
+  method: string
+  url: string
+  status: number
+  duration_ms: number
+  is_slow: number
+  trace_id: string
+}
+
+/** 行公共头（四表共享列） */
+interface HeadRow {
   ts: string
   apikey: string
-  kind: string
-  type: string
   release: string
   env: string
   sdkName: string
@@ -24,112 +74,139 @@ interface EventRow {
   page: string
   viewId: string
   device: string
-  errorMessage: string
-  errorName: string
-  errorLevel: string
-  errorId: string
-  fingerprint: string
-  componentName: string
-  stackFrames: string
-  http: string
-  metricName: string
-  metricValue: number
-  metricScore: string
-  metricDetail: string
-  breadcrumbs: string
+}
+
+function commonHead(e: NormalizedEvent, ts: string): HeadRow {
+  return {
+    ts,
+    apikey: e.apikey,
+    release: e.release ?? '',
+    env: e.env ?? '',
+    sdkName: e.sdkName,
+    sdkVersion: e.sdkVersion,
+    sessionId: e.sessionId,
+    trackerId: e.trackerId,
+    page: e.page,
+    viewId: e.viewId ?? '',
+    device: JSON.stringify(e.device ?? {}),
+  }
 }
 
 /**
- * ClickHouse DateTime 无时区语义（镜像默认 UTC）：写入与查询参数边界统一格式化为
- * UTC 'YYYY-MM-DD HH:MM:SS'。ISO 8601（T/毫秒/Z）CH 不接受——旧实现 insert 侧留了
- * 毫秒、查询参数传完整 ISO，分别以 CANNOT_PARSE_INPUT / BAD_QUERY_PARAMETER 失败
- * （挂账「CH 写入/查询时区格式不一致」的实锤与修复，2026-10-12 infra 冒烟发现）。
+ * behavior 明细到列的映射（与 Memory 形态 recentBehaviors 输出同构，equivalence 锁定）。
+ * 返回新对象不改写入参——载荷在队列重放时会复用。
  */
-export function toClickHouseDateTime(d: Date): string {
-  return d.toISOString().slice(0, 19).replace('T', ' ')
+export function behaviorEventToRow(e: NormalizedEvent, ts: string): BehaviorRow {
+  const b = (e.behavior ?? {}) as Record<string, unknown>
+  const str = (k: string): string => (typeof b[k] === 'string' ? (b[k] as string) : '')
+  const dwell =
+    typeof b['activeMs'] === 'number'
+      ? Math.max(0, Math.round(b['activeMs'] as number))
+      : typeof b['dwellMs'] === 'number'
+        ? Math.max(0, Math.round(b['dwellMs'] as number))
+        : 0
+  return {
+    ...commonHead(e, ts),
+    behavior_type: e.type,
+    name: str('name'),
+    props: b['props'] !== undefined ? JSON.stringify(b['props']) : '',
+    url: str('url'),
+    load_type: str('loadType'),
+    referrer_host: str('referrerHost'),
+    utm_source: str('utmSource'),
+    utm_medium: str('utmMedium'),
+    utm_campaign: str('utmCampaign'),
+    selector: str('selector'),
+    dwell_ms: dwell,
+    from_source: str('from'),
+  }
+}
+
+export function apiEventToRow(e: NormalizedEvent, ts: string): ApiRow {
+  const a = (e.api ?? {}) as Record<string, unknown>
+  const num = (k: string): number => (typeof a[k] === 'number' ? (a[k] as number) : 0)
+  const duration = num('durationMs')
+  return {
+    ...commonHead(e, ts),
+    method: typeof a['method'] === 'string' ? (a['method'] as string) : '',
+    url: typeof a['url'] === 'string' ? (a['url'] as string) : '',
+    status: Math.round(num('status')),
+    duration_ms: Math.max(0, Math.round(duration)),
+    is_slow: a['slow'] === true ? 1 : 0,
+    trace_id: typeof a['traceId'] === 'string' ? (a['traceId'] as string) : '',
+  }
 }
 
 @Injectable()
 export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
-  private readonly logger = new Logger(ClickHouseStorage.name)
   private readonly client: ClickHouseClient
 
   constructor(url: string, username = 'default', password = '') {
     this.client = createClient({ url, username, password })
   }
+
   async onApplicationShutdown(): Promise<void> {
     await this.client.close()
   }
 
-  async recentBehaviors(apikey: string, limit: number): Promise<Array<Record<string, unknown>>> {
-    const rs = await this.client.query({
-      query: `SELECT type, ts, sessionId, page
-              FROM events
-              WHERE apikey = {apikey:String} AND kind = 'behavior'
-              ORDER BY ts DESC LIMIT {limit:UInt32}`,
-      query_params: { apikey, limit },
-      format: 'JSONEachRow',
-    })
-    return await rs.json()
-  }
-
-  async errorCountsByFingerprint(
-    apikey: string,
-    fingerprints: string[]
-  ): Promise<Map<string, number>> {
-    if (fingerprints.length === 0) return new Map()
-    const rs = await this.client.query({
-      query: `SELECT fingerprint, count() AS n
-              FROM events
-              WHERE apikey = {apikey:String} AND kind = 'error'
-                AND fingerprint IN {fps:Array(String)}
-              GROUP BY fingerprint`,
-      query_params: { apikey, fps: fingerprints },
-      format: 'JSONEachRow',
-    })
-    const rows = (await rs.json()) as Array<{ fingerprint: string; n: number }>
-    return new Map(rows.map((r) => [r.fingerprint, Number(r.n)]))
-  }
-
   async saveBatch(events: NormalizedEvent[]): Promise<void> {
     if (events.length === 0) return
-    const rows: EventRow[] = []
+    const errors: ErrorRow[] = []
+    const perfs: PerfRow[] = []
+    const behaviors: BehaviorRow[] = []
+    const apis: ApiRow[] = []
     for (const e of events) {
-      const base = {
-        ts: toClickHouseDateTime(e.ts),
-        apikey: e.apikey,
-        kind: e.kind,
-        type: e.type,
-        release: e.release ?? '',
-        env: e.env ?? '',
-        sdkName: e.sdkName,
-        sdkVersion: e.sdkVersion,
-        sessionId: e.sessionId,
-        trackerId: e.trackerId,
-        page: e.page,
-        viewId: e.viewId ?? '',
-        device: JSON.stringify(e.device ?? {}),
-        errorMessage: e.error?.message ?? '',
-        errorName: e.error?.name ?? '',
-        errorLevel: e.error?.level ?? '',
-        errorId: e.error?.errorId !== undefined ? String(e.error.errorId) : '',
-        fingerprint: e.error?.fingerprint ?? '',
-        componentName: e.error?.componentName ?? '',
-        stackFrames: e.error ? JSON.stringify(e.error.stackFrames ?? []) : '[]',
-        http: e.error?.http ? JSON.stringify(e.error.http) : '',
-        metricName: e.perf?.[0]?.name ?? '',
-        metricValue: e.perf?.[0]?.value ?? 0,
-        metricScore: e.perf?.[0]?.score !== undefined ? String(e.perf![0].score) : '',
-        metricDetail: e.perf?.[0]?.detail ? JSON.stringify(e.perf[0].detail) : '',
-        breadcrumbs: e.breadcrumbs ? JSON.stringify(e.breadcrumbs) : '[]',
+      const ts = toClickHouseDateTime(e.ts)
+      if (e.kind === 'error' && e.error) {
+        errors.push({
+          ...commonHead(e, ts),
+          type: e.type,
+          resource_kind: e.error.resourceKind ?? '',
+          errorName: e.error.name ?? '',
+          errorLevel: e.error.level ?? '',
+          errorId: e.error.errorId !== undefined ? String(e.error.errorId) : '',
+          fingerprint: e.error.fingerprint,
+          componentName: e.error.componentName ?? '',
+          message: e.error.message,
+          message_head: e.error.message.slice(0, 128),
+          stack_frames: JSON.stringify(e.error.stackFrames ?? []),
+          http: e.error.http ? JSON.stringify(e.error.http) : '',
+          breadcrumbs: JSON.stringify(e.breadcrumbs ?? []),
+        })
+      } else if (e.kind === 'perf') {
+        for (const m of e.perf ?? []) {
+          perfs.push({
+            ...commonHead(e, ts),
+            metric_name: m.name,
+            metric_value: m.value,
+            metric_score: m.score ?? 0,
+            metric_detail: m.detail ? JSON.stringify(m.detail) : '',
+          })
+        }
+      } else if (e.kind === 'behavior') {
+        behaviors.push(behaviorEventToRow(e, ts))
+      } else if (e.kind === 'api') {
+        apis.push(apiEventToRow(e, ts))
       }
-      rows.push(base)
+      // kind='replay'：协议占位（回放预留），无列可落——静默跳过
     }
-    await this.client.insert({
-      table: 'events',
-      values: rows,
-      format: 'JSONEachRow',
-    })
+    // 分表写入：每域一次批量 INSERT；单域失败抛出走队列重试（整批 at-least-once）
+    if (errors.length > 0) {
+      await this.client.insert({ table: 'error_events', values: errors, format: 'JSONEachRow' })
+    }
+    if (perfs.length > 0) {
+      await this.client.insert({ table: 'perf_events', values: perfs, format: 'JSONEachRow' })
+    }
+    if (behaviors.length > 0) {
+      await this.client.insert({
+        table: 'behavior_events',
+        values: behaviors,
+        format: 'JSONEachRow',
+      })
+    }
+    if (apis.length > 0) {
+      await this.client.insert({ table: 'api_events', values: apis, format: 'JSONEachRow' })
+    }
   }
 
   async overview(apikey: string, sinceMs: number): Promise<OverviewStats> {
@@ -140,7 +217,16 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
                 countIf(kind = 'error') AS errors,
                 countIf(kind = 'perf') AS perfs,
                 uniqExact(sessionId) AS sessions
-              FROM events WHERE apikey = {apikey:String} AND ts >= {since:DateTime}`,
+              FROM (
+                SELECT 'error' AS kind, ts, sessionId FROM error_events
+                  WHERE apikey = {apikey:String} AND ts >= {since:DateTime}
+                UNION ALL SELECT 'perf', ts, sessionId FROM perf_events
+                  WHERE apikey = {apikey:String} AND ts >= {since:DateTime}
+                UNION ALL SELECT 'behavior', ts, sessionId FROM behavior_events
+                  WHERE apikey = {apikey:String} AND ts >= {since:DateTime}
+                UNION ALL SELECT 'api', ts, sessionId FROM api_events
+                  WHERE apikey = {apikey:String} AND ts >= {since:DateTime}
+              )`,
       query_params: { apikey, since },
       format: 'JSONEachRow',
     })
@@ -169,15 +255,15 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
       query: `SELECT
                 fingerprint,
                 type,
-                argMax(errorMessage, ts) AS message,
+                argMax(message, ts) AS message,
                 count() AS count,
                 uniqExact(sessionId) AS sessions,
                 min(ts) AS firstSeen,
                 max(ts) AS lastSeen,
                 groupUniqArray(release) AS releases,
                 argMinIf(release, ts, release != '') AS firstSeenRelease
-              FROM events
-              WHERE apikey = {apikey:String} AND kind = 'error' AND fingerprint != '' AND ts >= {since:DateTime}
+              FROM error_events
+              WHERE apikey = {apikey:String} AND fingerprint != '' AND ts >= {since:DateTime}
               GROUP BY fingerprint, type
               ORDER BY count DESC
               LIMIT {limit:UInt32}`,
@@ -215,11 +301,12 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
   }
 
   async errorDetail(apikey: string, fingerprint: string): Promise<NormalizedEvent | null> {
-    // apikey/release 必须查回透传：符号化按 (apikey, release) 匹配工件（总纲 §3.7 P1）
+    // apikey/release 必须查回透传：符号化按 (apikey, release) 匹配工件
     const rs = await this.client.query({
-      query: `SELECT apikey, release, sessionId, page, viewId, stackFrames, breadcrumbs, errorMessage, type
-              FROM events
-              WHERE apikey = {apikey:String} AND fingerprint = {fp:String} AND kind = 'error'
+      query: `SELECT apikey, release, sessionId, page, viewId, stack_frames, breadcrumbs,
+                     message AS errorMessage, errorName, errorLevel, componentName, http, type
+              FROM error_events
+              WHERE apikey = {apikey:String} AND fingerprint = {fp:String}
               ORDER BY ts DESC LIMIT 1`,
       query_params: { apikey, fp: fingerprint },
       format: 'JSONEachRow',
@@ -230,9 +317,13 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
       sessionId: string
       page: string
       viewId: string
-      stackFrames: string
+      stack_frames: string
       breadcrumbs: string
       errorMessage: string
+      errorName: string
+      errorLevel: string
+      componentName: string
+      http: string
       type: string
     }>()
     const row = rows[0]
@@ -252,8 +343,12 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
       device: {},
       error: {
         message: row.errorMessage,
+        name: row.errorName || undefined,
+        level: row.errorLevel || undefined,
         fingerprint,
-        stackFrames: JSON.parse(row.stackFrames || '[]'),
+        componentName: row.componentName || undefined,
+        stackFrames: JSON.parse(row.stack_frames || '[]'),
+        http: row.http ? JSON.parse(row.http) : undefined,
       },
       breadcrumbs: JSON.parse(row.breadcrumbs || '[]'),
     }
@@ -268,11 +363,11 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
     const rs = await this.client.query({
       query: `SELECT
                 count() AS count,
-                quantileTDigest(0.5)(metricValue) AS p50,
-                quantileTDigest(0.75)(metricValue) AS p75,
-                quantileTDigest(0.95)(metricValue) AS p95
-              FROM events
-              WHERE apikey = {apikey:String} AND kind = 'perf' AND metricName = {metric:String} AND ts >= {since:DateTime}`,
+                quantileTDigest(0.5)(metric_value) AS p50,
+                quantileTDigest(0.75)(metric_value) AS p75,
+                quantileTDigest(0.95)(metric_value) AS p95
+              FROM perf_events
+              WHERE apikey = {apikey:String} AND metric_name = {metric:String} AND ts >= {since:DateTime}`,
       query_params: { apikey, metric, since },
       format: 'JSONEachRow',
     })
@@ -285,5 +380,57 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
       p75: row?.p75 ?? null,
       p95: row?.p95 ?? null,
     }
+  }
+
+  /** 行为明细全列查回（P2 明细完整性：PV 来源/track 属性/停留时长与 Memory 等价） */
+  async recentBehaviors(apikey: string, limit: number): Promise<Array<Record<string, unknown>>> {
+    const rs = await this.client.query({
+      query: `SELECT behavior_type, name, props, url, load_type, referrer_host,
+                     utm_source, utm_medium, utm_campaign, selector, dwell_ms, from_source,
+                     ts, sessionId, page
+              FROM behavior_events
+              WHERE apikey = {apikey:String}
+              ORDER BY ts DESC LIMIT {limit:UInt32}`,
+      query_params: { apikey, limit },
+      format: 'JSONEachRow',
+    })
+    const rows = await rs.json<Record<string, string>>()
+    return rows.map((r) => ({
+      behaviorType: r.behavior_type,
+      type: r.behavior_type,
+      ts: new Date(r.ts.replace(' ', 'T') + 'Z').toISOString(),
+      sessionId: r.sessionId,
+      page: r.page,
+      ...behaviorDetailFields({
+        name: r.name,
+        props: r.props ? JSON.parse(r.props) : undefined,
+        url: r.url,
+        loadType: r.load_type,
+        referrerHost: r.referrer_host,
+        utmSource: r.utm_source,
+        utmMedium: r.utm_medium,
+        utmCampaign: r.utm_campaign,
+        selector: r.selector,
+        activeMs: Number(r.dwell_ms) > 0 ? Number(r.dwell_ms) : undefined,
+        from: r.from_source,
+      }),
+    }))
+  }
+
+  async errorCountsByFingerprint(
+    apikey: string,
+    fingerprints: string[]
+  ): Promise<Map<string, number>> {
+    if (fingerprints.length === 0) return new Map()
+    const rs = await this.client.query({
+      query: `SELECT fingerprint, count() AS n
+              FROM error_events
+              WHERE apikey = {apikey:String} AND fingerprint IN {fps:Array(String)}
+              GROUP BY fingerprint`,
+      query_params: { apikey, fps: fingerprints },
+      format: 'JSONEachRow',
+    })
+    const rows = (await rs.json()) as Array<{ fingerprint: string; n: number }>
+    return new Map(rows.map((r) => [r.fingerprint, Number(r.n)]))
   }
 }

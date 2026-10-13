@@ -41,6 +41,8 @@ export interface NormalizedEvent {
     /** 服务端指纹（首帧位置），错误分组主键 */
     fingerprint: string
     componentName?: string
+    /** 资源错误细分（M7.5 P2 error_events 独立列） */
+    resourceKind?: string
     stackFrames: StackFrame[]
     http?: {
       method?: string
@@ -155,6 +157,7 @@ export function normalizeEnvelope(envelope: TransportEnvelope): NormalizeResult 
           errorId: event.error.errorId,
           fingerprint: computeFingerprint(fingerprintSource),
           componentName: event.error.componentName ? mask(event.error.componentName) : undefined,
+          resourceKind: event.error.resourceKind,
           stackFrames,
           http,
         },

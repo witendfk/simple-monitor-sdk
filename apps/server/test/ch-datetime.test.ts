@@ -3,7 +3,7 @@
  * 分别触发 CANNOT_PARSE_INPUT / BAD_QUERY_PARAMETER——边界统一 UTC 短格式
  */
 import { describe, it, expect } from 'vitest'
-import { toClickHouseDateTime } from '../src/storage/clickhouse.storage'
+import { toClickHouseDateTime } from '../src/storage/clickhouse-datetime'
 
 describe('toClickHouseDateTime', () => {
   it('ISO（T/毫秒/Z）→ UTC YYYY-MM-DD HH:MM:SS', () => {

@@ -5,6 +5,7 @@
 import { Injectable } from '@nestjs/common'
 import type { NormalizedEvent } from '../ingest/normalize'
 import type { ErrorGroup, IEventStorage, OverviewStats, PerfQuantiles } from './event-storage'
+import { behaviorDetailFields } from './event-storage'
 
 const MAX_EVENTS = 50_000
 
@@ -129,17 +130,19 @@ export class MemoryStorage implements IEventStorage {
     }
   }
 
+  /** 行为明细全量回放（规范形状经 behaviorDetailFields，与 CH 分表列同构） */
   async recentBehaviors(apikey: string, limit: number): Promise<Array<Record<string, unknown>>> {
     return this.events
       .filter((e) => e.apikey === apikey && e.kind === 'behavior')
       .slice(-limit)
       .reverse()
       .map((e) => ({
+        behaviorType: e.type,
         type: e.type,
         ts: e.ts.toISOString(),
         sessionId: e.sessionId,
         page: e.page,
-        ...(e.behavior ?? {}),
+        ...behaviorDetailFields((e.behavior ?? {}) as Record<string, unknown>),
       }))
   }
 

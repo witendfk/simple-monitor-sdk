@@ -9,6 +9,7 @@ import http from 'k6/http'
 import { check } from 'k6'
 
 const TARGET = __ENV.TARGET || 'http://localhost:3000'
+const APIKEY = __ENV.APIKEY || 'demo-key'
 const RATE = Number(__ENV.RATE || 5000) // 每秒迭代数
 
 export const options = {
@@ -32,7 +33,7 @@ function makeEnvelope(i) {
   return {
     protocolVersion: 1,
     sentAt: Date.now(),
-    auth: { apiKey: 'demo-key', release: 'v1.0.0', sdk: { name: 'web', version: '0.0.1' } },
+    auth: { apiKey: APIKEY, release: 'v1.0.0', sdk: { name: 'web', version: '0.0.1' } },
     session: { sessionId: `k6-sess-${__VU}`, trackerId: `k6-track-${__VU}` },
     context: { page: 'http://load.test/checkout' },
     events: [

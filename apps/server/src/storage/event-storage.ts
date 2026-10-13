@@ -44,6 +44,32 @@ export interface PerfQuantiles {
 export const STORAGE_TOKEN = 'STORAGE'
 
 /**
+ * 行为明细的规范输出形状（Memory 与 CH 两形态共用同一函数，equivalence 测试锁定）。
+ * 输入是行为载荷的键值视图：Memory 直接传 payload，CH 从分表列回填同名键。
+ * 停留时长统一输出 dwellMs（page_dwell.activeMs / expose.dwellMs 归一）。
+ */
+export function behaviorDetailFields(b: Record<string, unknown>): Record<string, unknown> {
+  const str = (k: string): string | undefined =>
+    typeof b[k] === 'string' && (b[k] as string) !== '' ? (b[k] as string) : undefined
+  const activeMs = typeof b['activeMs'] === 'number' ? (b['activeMs'] as number) : undefined
+  const dwellMs = typeof b['dwellMs'] === 'number' ? (b['dwellMs'] as number) : undefined
+  const dwell = activeMs ?? dwellMs
+  return {
+    ...(str('name') ? { name: str('name') } : {}),
+    ...(b['props'] !== undefined && b['props'] !== null ? { props: b['props'] } : {}),
+    ...(str('url') ? { url: str('url') } : {}),
+    ...(str('loadType') ? { loadType: str('loadType') } : {}),
+    ...(str('referrerHost') ? { referrerHost: str('referrerHost') } : {}),
+    ...(str('utmSource') ? { utmSource: str('utmSource') } : {}),
+    ...(str('utmMedium') ? { utmMedium: str('utmMedium') } : {}),
+    ...(str('utmCampaign') ? { utmCampaign: str('utmCampaign') } : {}),
+    ...(str('selector') ? { selector: str('selector') } : {}),
+    ...(dwell !== undefined && dwell > 0 ? { dwellMs: dwell } : {}),
+    ...(str('from') ? { from: str('from') } : {}),
+  }
+}
+
+/**
  * 查询一律带 apikey（总纲 §3.7 P0-4）：跨项目数据隔离是存储层的职责，
  * controller 从鉴权头透传，实现方必须过滤——漏过滤 = IDOR。
  */
