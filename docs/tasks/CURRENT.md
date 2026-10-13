@@ -82,6 +82,7 @@
 
 - [ ] `pnpm size` 接入 CI 构建后步骤，超预算阻断合并（M7 遗留）
 - [x] `pnpm lint:ci` warning 基线与上限双降：167 → 166（2026-10-10 beacon 拆批批次净消 1 条，`--max-warnings` 同步下调 166）
+- [x] 发包兼容性口径（2026-10-13）：**Node ≥14（protocol/types/utils）**，engines 不声明（业界主流通用包通行做法，避免 engine-strict 误伤），口径写进 PUBLISH.md「兼容性口径」节；CI 新增 `node14-smoke` job（node:14 容器 require 三包产物 + maskDeep/信封校验断言）作为验证背书。依据审计：全部 10 包 tsup target ES2020，无版本敏感 API（core 的新 API 均有特性检测降级）。仓库文档不提商用厂商名
 - [ ] k6 压测：接入层吞吐已实测（2026-10-13，生产构建）——2k 信封/s（=4k events/s）p95 4.8ms 达标；3k/s 起单进程事件循环饱和（p95 145ms→5k/s 190ms，零丢失）。**达标路径**：限流 INCR + XADD pipeline 化、consumer 独立进程/副本部署、zod 校验预算 profile；验收口径 5k events/s p95<50ms 待上述优化后复测（脚本 `apps/server/k6/report.js`）
 - [ ] 真实 IndexedDB 断网→恢复 e2e（M2 遗留）
 - [ ] SDK 自身 long task 开销度量（M2 遗留）

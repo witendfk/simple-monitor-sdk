@@ -28,6 +28,13 @@ pnpm release
 - [ ] npm 侧创建 `simple-monitor` 组织（scope 归属）
 - [ ] 首版给 publish 加 next 标签观察：`pnpm -r --filter "./packages/*" publish --access public --tag next --no-git-checks`，稳定后再 latest
 - [ ] CI 已配置 `NPM_TOKEN` secret（.github/workflows，release job 可选）
+- [ ] `node14-smoke` job 绿（ci.yml——兼容口径的验证依据）
+
+## 兼容性口径（对外承诺）
+
+- **`@simple-monitor/protocol` / `types` / `utils`：Node ≥ 14**——产物为 ES2020 target 的 CJS+ESM 双格式（`index.js` / `index.mjs`），无版本敏感 API（core 的 AbortSignal.timeout / CompressionStream 属浏览器包且有降级守卫）。验证依据：CI `node14-smoke` job（node:14 容器 require 三包产物 + 行为断言）。
+- **浏览器包（core / browser / web / web-performance / vue / react）**：运行时是浏览器，Node 版本无意义（SSR import 有守卫不崩溃）——不做 Node 兼容承诺，浏览器矩阵见接入文档。
+- **不声明 `engines` 字段**（业界主流通用包的通行做法）：避免 engine-strict 环境误伤；兼容口径以本文 + CI 冒烟为准。仓库根 `package.json` 的 `engines` 仅约束贡献者的开发环境，与发布包无关。
 
 ## 三、CI 自动发布（可选，推荐）
 
