@@ -49,43 +49,32 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:conformance
 
-  # 发包兼容性背书（口径 Node ≥14，见 PUBLISH.md §兼容性）：node:14 容器内 require
-  # 三包产物并断言行为。产物由 tsup 以 ES2020 target 预构建，消费方 Node 14 只需
-  # require（CJS require 分支 + exports 条件 12.16+/14 全支持），无需本仓工具链。
-  # 不声明 engines（神策 sa-sdk-javascript / axios 先例），此 job 是口径的验证依据。
+  # 发包兼容性背书（口径 Node ≥14，见 PUBLISH.md §兼容性）：Node 20 构建三包产物，
+  # 在 node:14 容器内 require 断言。两个坑（CI 日志实证）：
+  #  ① npm6 顺软链装依赖会遇 workspace:* 报 Unsupported 并剪枝软链——先装 zod 再建软链；
+  #  ② dist 是构建产物不入库——容器验证前必须先构建三包。
   node14-smoke:
     runs-on: ubuntu-latest
-    container: node:14
     steps:
       - uses: actions/checkout@v4
-      - name: 组装依赖解析环境（workspace 软链 + zod 运行时依赖）
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @simple-monitor/types --filter @simple-monitor/utils --filter @simple-monitor/protocol build
+      - name: Node 14 require 冒烟断言（node:14 容器）
         run: |
-          mkdir -p /smoke
-          cd /smoke && npm init -y >/dev/null && npm install zod@3.24.1 --no-audit --no-fund
-          mkdir -p node_modules/@simple-monitor
-          ln -s "$GITHUB_WORKSPACE/packages/types" node_modules/@simple-monitor/types
-          ln -s "$GITHUB_WORKSPACE/packages/utils" node_modules/@simple-monitor/utils
-          ln -s "$GITHUB_WORKSPACE/packages/protocol" node_modules/@simple-monitor/protocol
-      - name: Node 14 require 冒烟断言
-        run: |
-          NODE_PATH=/smoke/node_modules node -e "
-            const assert = require('assert');
-            process.chdir('/smoke');
-            const types = require('@simple-monitor/types');
-            const utils = require('@simple-monitor/utils');
-            const protocol = require('@simple-monitor/protocol');
-            assert(types.ErrorTypes && types.BreadCrumbTypes, 'types 枚举缺失');
-            const masked = utils.maskDeep({ phone: '13812345678', traceId: 't-1' });
-            assert(masked.phone === '[phone]', 'maskDeep 失效: ' + masked.phone);
-            assert(masked.traceId === 't-1', '标识键被误伤');
-            const ok = protocol.validateEnvelope({
-              protocolVersion: protocol.PROTOCOL_VERSION,
-              sentAt: 1,
-              auth: { apiKey: 'k', sdk: { name: 't', version: '0' } },
-              session: { sessionId: 's', trackerId: 't' },
-              context: { page: '/' },
-              events: [{ kind: 'perf', metrics: [{ name: 'fp', value: 100 }] }],
-            });
-            assert(ok.success === true, '信封校验失效: ' + JSON.stringify(ok.error?.issues));
-            console.log('node14-smoke OK @ node', process.version);
+          docker run --rm -v "$GITHUB_WORKSPACE":/ws node:14 bash -c "
+            mkdir -p /smoke && cd /smoke
+            npm init -y >/dev/null && npm install zod@3.24.1 --no-audit --no-fund >/dev/null 2>&1
+            mkdir -p node_modules/@simple-monitor
+            ln -s /ws/packages/types node_modules/@simple-monitor/types
+            ln -s /ws/packages/utils node_modules/@simple-monitor/utils
+            ln -s /ws/packages/protocol node_modules/@simple-monitor/protocol
+            cp /ws/apps/dashboard/design/node14-smoke.js smoke.js
+            node smoke.js
           "
