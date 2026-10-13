@@ -1,0 +1,2144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NightOwl · 看板原型 v1（登录后全页面）</title>
+<!--
+  NightOwl 看板原型 v1（可点击：左侧导航切换页面）
+  设计参照：reui.io app-shell-17 / auth 暗色 shadcn 审美
+  页面：概览（健康度英雄卡+5域+趋势）/ 错误（9分类+排行表+维度tabs）/
+        错误详情（符号化堆栈+面包屑）/ 性能（分位趋势）/ 告警（规则+触发记录）
+  数据为演示样例；SVG 图表（网格+面积+峰值点），无 emoji，图标 lucide 内嵌
+-->
+<style>
+  :root {
+    --bg: #09090b;
+    --card: #111113;
+    --card-2: #0e0e10;
+    --border: #27272a;
+    --border-soft: #1f1f23;
+    --fg: #fafafa;
+    --muted: #a1a1aa;
+    --dim: #71717a;
+    --green: #34d399; --green-tint: rgba(52, 211, 153, 0.1);
+    --red: #f87171;   --red-tint: rgba(248, 113, 113, 0.1);
+    --orange: #fbbf24;--orange-tint: rgba(251, 191, 36, 0.1);
+    --blue: #60a5fa;  --blue-tint: rgba(96, 165, 250, 0.1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    -webkit-font-smoothing: antialiased; letter-spacing: -0.003em;
+    font-size: 14px;
+  }
+  svg { display: block; }
+  .app { display: flex; min-height: 100vh; }
+
+  /* ===== 侧栏 ===== */
+  .sidebar {
+    width: 232px; flex-shrink: 0;
+    border-right: 1px solid var(--border-soft);
+    display: flex; flex-direction: column;
+    padding: 16px 12px;
+    position: sticky; top: 0; height: 100vh;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; }
+  .brand .logo {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: var(--card); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; color: var(--fg);
+  }
+  .brand .name { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .nav-group { margin-top: 14px; }
+  .nav-group-title {
+    font-size: 11px; color: var(--dim); padding: 0 8px 6px;
+    letter-spacing: 0.02em;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px;
+    color: var(--muted); cursor: pointer; user-select: none;
+    font-size: 13.5px;
+  }
+  .nav-item:hover { background: rgba(250, 250, 250, 0.04); color: var(--fg); }
+  .nav-item.active { background: rgba(250, 250, 250, 0.07); color: var(--fg); font-weight: 500; }
+  .nav-item .badge {
+    margin-left: auto; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+    background: var(--red-tint); color: var(--red);
+  }
+  .sidebar .spacer { flex: 1; }
+  .side-footer { border-top: 1px solid var(--border-soft); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .user-row { display: flex; align-items: center; gap: 9px; padding: 6px 8px; }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--muted);
+  }
+  .user-row .who { font-size: 12.5px; color: var(--muted); }
+  .version { font-size: 11px; color: var(--dim); padding: 0 8px; }
+
+  /* ===== 主区 ===== */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 24px; border-bottom: 1px solid var(--border-soft);
+    position: sticky; top: 0; background: rgba(9, 9, 11, 0.85); backdrop-filter: blur(6px);
+    z-index: 5;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 32px; padding: 0 12px;
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: 12.5px; color: var(--muted);
+  }
+  .chip .green-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  .chip b { color: var(--fg); font-weight: 500; }
+  .topbar .grow { flex: 1; }
+
+  .content { padding: 24px 28px 48px; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  .page-header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 22px; }
+  .page-header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.015em; margin: 0 0 4px; }
+  .page-header .desc { color: var(--dim); font-size: 13px; }
+  .page-header .actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+
+  .btn {
+    height: 34px; padding: 0 14px; border-radius: 8px;
+    border: 1px solid var(--border); background: transparent; color: var(--fg);
+    font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+  }
+  .btn:hover { background: rgba(250, 250, 250, 0.05); }
+  .btn.primary { background: #fafafa; color: #09090b; border-color: #fafafa; font-weight: 600; }
+  .btn.primary:hover { background: #e4e4e7; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border-soft);
+    border-radius: 12px; padding: 18px 20px;
+  }
+  .card h3 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+  .card .sub { color: var(--dim); font-size: 12px; margin: 0 0 14px; }
+  .row { display: grid; gap: 14px; }
+  .muted { color: var(--muted); }
+  .dim { color: var(--dim); }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
+  }
+  .badge.green { background: var(--green-tint); color: var(--green); }
+  .badge.red { background: var(--red-tint); color: var(--red); }
+  .badge.orange { background: var(--orange-tint); color: var(--orange); }
+  .badge.blue { background: var(--blue-tint); color: var(--blue); }
+  .badge.gray { background: rgba(250, 250, 250, 0.06); color: var(--muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; color: var(--dim); font-weight: 500; font-size: 12px;
+    padding: 8px 10px; border-bottom: 1px solid var(--border-soft);
+  }
+  td { padding: 10px; border-bottom: 1px solid var(--border-soft); }
+  tr:last-child td { border-bottom: none; }
+  tr.rowlink { cursor: pointer; }
+  tr.rowlink:hover td { background: rgba(250, 250, 250, 0.03); }
+  td .msg { color: var(--muted); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .tabs { display: inline-flex; gap: 4px; background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 9px; padding: 3px; }
+  .tab-chip {
+    padding: 5px 13px; border-radius: 7px; font-size: 12.5px;
+    color: var(--muted); cursor: pointer; user-select: none;
+  }
+  .tab-chip.active { background: rgba(250, 250, 250, 0.09); color: var(--fg); }
+
+  /* 概览：健康度英雄卡 */
+  .hero { display: flex; gap: 28px; align-items: stretch; }
+  .hero .score {
+    display: flex; flex-direction: column; justify-content: center;
+    padding-right: 28px; border-right: 1px solid var(--border-soft); min-width: 190px;
+  }
+  .hero .score .label { color: var(--dim); font-size: 12px; margin-bottom: 2px; }
+  .hero .score .num { font-size: 52px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.05; }
+  .hero .deduct { flex: 1; }
+  .deduct-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border: 1px solid var(--border-soft); border-radius: 9px;
+    margin-top: 8px; font-size: 13px;
+  }
+  .deduct-item .why { color: var(--muted); }
+  .deduct-item .pts { margin-left: auto; color: var(--red); font-weight: 600; font-size: 12.5px; }
+
+  .stat { text-align: left; }
+  .stat .k { color: var(--dim); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .stat .v { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; margin: 6px 0 2px; }
+  .stat .d { font-size: 11.5px; }
+
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  /* 堆栈 */
+  .stack { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.9; }
+  .stack .frame { display: flex; gap: 10px; padding: 2px 8px; border-radius: 6px; }
+  .stack .frame:hover { background: rgba(250, 250, 250, 0.03); }
+  .stack .fn { color: var(--blue); }
+  .stack .loc { color: var(--muted); }
+  .stack .frame.hot { background: var(--red-tint); }
+  .stack .frame.hot .loc { color: var(--red); font-weight: 600; }
+  .stack .mapped { color: var(--green); font-size: 11.5px; }
+
+  /* 面包屑时间线 */
+  .crumb { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--border-soft); }
+  .crumb:last-child { border-bottom: none; }
+  .crumb .t { color: var(--dim); font-size: 12px; min-width: 74px; font-family: ui-monospace, Menlo, monospace; }
+  .crumb .ico {
+    width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+    background: var(--card-2); border: 1px solid var(--border-soft);
+    display: flex; align-items: center; justify-content: center; color: var(--muted);
+  }
+  .crumb .what { font-size: 12.5px; color: var(--muted); }
+  .crumb .what b { color: var(--fg); font-weight: 500; }
+
+  /* 开关 */
+  .switch {
+    width: 34px; height: 19px; border-radius: 999px; position: relative; cursor: pointer;
+    background: #3f3f46; transition: background 0.15s;
+  }
+  .switch.on { background: var(--green); }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 15px; height: 15px; border-radius: 50%; background: #fff;
+    transition: left 0.15s;
+  }
+  .switch.on::after { left: 17px; }
+
+  .kv { display: grid; grid-template-columns: 88px 1fr; gap: 8px 14px; font-size: 12.5px; }
+  .kv .k { color: var(--dim); }
+  .nav-group-title {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; color: var(--dim); padding: 6px 8px;
+    cursor: pointer; user-select: none; letter-spacing: 0.02em;
+  }
+  .nav-group-title:hover { color: var(--muted); }
+  .nav-group-title .chev { transition: transform 0.15s; font-size: 10px; }
+  .nav-children { display: flex; flex-direction: column; gap: 1px; }
+  /* 分析页筛选区（查询构建器） */
+  .filter-bar {
+    background: var(--card); border: 1px solid var(--border-soft);
+    border-radius: 12px; padding: 14px 16px;
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    margin-bottom: 14px;
+  }
+  .filter-bar .f-label { font-size: 12px; color: var(--dim); }
+  .f-select {
+    height: 32px; padding: 0 11px; border-radius: 8px;
+    background: var(--card-2); border: 1px solid var(--border);
+    font-size: 12.5px; color: var(--fg);
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  }
+  .f-select b { font-weight: 500; }
+  .event-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 10px; border-radius: 8px;
+    background: var(--blue-tint); border: 1px solid rgba(96, 165, 250, 0.3);
+    color: var(--blue); font-size: 12.5px;
+  }
+  .event-chip .x { cursor: pointer; opacity: 0.7; }
+  .event-chip .x:hover { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ===== 侧栏 ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+      </div>
+      <div class="name">NightOwl</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-title">总览 <span class="chev">▾</span></div>
+      <div class="nav-children">
+      <div class="nav-item active" data-page="overview" onclick="show('overview', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+        数据总览
+      </div>
+      <div class="nav-item" data-page="realtime" onclick="show('realtime', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></svg>
+        实时监控
+      </div>
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-title">监控中心 <span class="chev">▾</span></div>
+      <div class="nav-children">
+      <div class="nav-item" data-page="errors" onclick="show('errors', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+        异常分析
+        <span class="badge">12</span>
+      </div>
+      <div class="nav-item" data-page="performance" onclick="show('performance', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        页面性能
+      </div>
+      <div class="nav-item" data-page="api" onclick="show('api', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2"/><path d="M15.4 22a1 1 0 0 0 1.048-1.4 8 8 0 1 1 0-17.2A1 1 0 0 0 15.4 2"/></svg>
+        API 监控
+      </div>
+      <div class="nav-item" data-page="visits" onclick="show('visits', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+        页面访问
+      </div>
+      <div class="nav-item" data-page="resources" onclick="show('resources', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13"/><path d="m16 6-4-4-4 4"/><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/></svg>
+        静态资源
+      </div>
+      <div class="nav-item" data-page="logs" onclick="show('logs', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 1.38V4a2 2 0 0 1 2-2"/></svg>
+        日志查询
+      </div>
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-title">埋点分析 <span class="chev">▾</span></div>
+      <div class="nav-children">
+      <div class="nav-item" data-page="events" onclick="show('events', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+        事件分析
+      </div>
+      <div class="nav-item" data-page="funnel" onclick="show('funnel', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18l-7 8v7l-4 3v-10Z"/></svg>
+        转化漏斗
+      </div>
+      <div class="nav-item" data-page="retention" onclick="show('retention', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+        用户留存
+      </div>
+      <div class="nav-item" data-page="exposure" onclick="show('exposure', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+        曝光分析
+      </div>
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-title">系统设置 <span class="chev">▾</span></div>
+      <div class="nav-children">
+      <div class="nav-item" data-page="alerts" onclick="show('alerts', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        告警规则
+      </div>
+      <div class="nav-item" data-page="sourcemaps" onclick="show('sourcemaps', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
+        Source Map
+      </div>
+      <div class="nav-item" data-page="appkeys" onclick="show('appkeys', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        应用与密钥
+      </div>
+      <div class="nav-item" data-page="channels" onclick="show('channels', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/></svg>
+        通知渠道
+      </div>
+      <div class="nav-item" data-page="members" onclick="show('members', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+        成员与权限
+      </div>
+      <div class="nav-item" data-page="ai" onclick="show('ai', this)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+        AI 诊断
+      </div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="side-footer">
+      <div class="user-row">
+        <div class="avatar">ad</div>
+        <div class="who">admin</div>
+      </div>
+      <div class="version">NightOwl v0.3.0</div>
+    </div>
+  </aside>
+
+  <!-- ===== 主区 ===== -->
+  <div class="main">
+    <div class="topbar">
+      <span class="chip"><span class="green-dot"></span><b>demo-store</b></span>
+      <span class="chip">环境 <b>production</b></span>
+      <span class="chip">近 1 小时 ▾</span>
+      <span class="grow"></span>
+      <span class="chip" onclick="show('alerts', document.querySelector('[data-page=alerts]'))">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        告警
+      </span>
+      <span class="chip" onclick="logoutHint()" style="cursor: pointer;">退出</span>
+    </div>
+
+    <div class="content">
+      <!-- ============ 占位页（规划中能力，不造假数据） ============ -->
+      <section class="page" id="page-placeholder">
+        <div class="page-header">
+          <div>
+            <h1 id="ph-title">能力规划中</h1>
+            <div class="desc" id="ph-desc">该能力在路线图中，尚未实现——不提供模拟数据</div>
+          </div>
+          <div class="actions"><span class="badge gray" id="ph-milestone">—</span></div>
+        </div>
+        <div class="card" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 72px 24px; text-align: center;">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#3f3f46" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+          <div style="font-size: 15px; font-weight: 600; margin: 14px 0 6px;">该页面属于路线图后续里程碑</div>
+          <div class="muted" style="font-size: 13px; max-width: 420px;">菜单结构即终局形态：入口先行、功能按里程碑点亮。<span id="ph-note" style="color: var(--fg);"></span>落地前此页不提供任何模拟数据。</div>
+        </div>
+      </section>
+
+      <!-- ============ 概览 ============ -->
+      <section class="page active" id="page-overview">
+        <div class="page-header">
+          <div>
+            <h1>概览</h1>
+            <div class="desc">项目运行健康度与关键指标总览 · 数据更新于 10 秒前</div>
+          </div>
+          <div class="actions">
+            <button class="btn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+              导出
+            </button>
+          </div>
+        </div>
+
+        <!-- 健康度英雄卡 -->
+        <div class="card hero" style="margin-bottom: 14px;">
+          <div class="score">
+            <div class="label">项目健康度</div>
+            <div class="num" style="color: var(--green);">92</div>
+            <div style="margin-top: 8px;"><span class="badge green">● 健康</span></div>
+          </div>
+          <div class="deduct">
+            <div style="color: var(--dim); font-size: 12px; margin-top: 4px;">扣分项 TOP 3</div>
+            <div class="deduct-item">
+              <span class="badge orange">性能</span>
+              <span>LCP P75 连续 2 小时超 4s 阈值</span>
+              <span class="pts">−4</span>
+            </div>
+            <div class="deduct-item">
+              <span class="badge red">错误</span>
+              <span>TypeError: amount.toFixed 突增（近 15min ×3.2）</span>
+              <span class="pts">−3</span>
+            </div>
+            <div class="deduct-item">
+              <span class="badge red">错误</span>
+              <span>资源加载失败：/assets/hero.webp（5 次）</span>
+              <span class="pts">−1</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5 域卡 -->
+        <div class="row" style="grid-template-columns: repeat(5, 1fr); margin-bottom: 14px;">
+          <div class="card stat">
+            <div class="k">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+              错误（1h）
+            </div>
+            <div class="v">12</div>
+            <div class="d" style="color: var(--red);">↑ 3.2× 突增</div>
+          </div>
+          <div class="card stat">
+            <div class="k">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              LCP P75
+            </div>
+            <div class="v">2.1s</div>
+            <div class="d" style="color: var(--orange);">超阈值 4s 的 52%</div>
+          </div>
+          <div class="card stat">
+            <div class="k">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2"/><path d="M15.4 22a1 1 0 0 0 1.048-1.4 8 8 0 1 1 0-17.2A1 1 0 0 0 15.4 2"/></svg>
+              API 成功率
+            </div>
+            <div class="v">99.2%</div>
+            <div class="d" style="color: var(--green);">按采样率校正 · 估算</div>
+          </div>
+          <div class="card stat">
+            <div class="k">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 8.5v11l6-4 6 4v-11a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2"/><path d="M8.5 8.5H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-2.5"/></svg>
+              资源失败
+            </div>
+            <div class="v">5</div>
+            <div class="d" style="color: var(--red);">image ×4 · script ×1</div>
+          </div>
+          <div class="card stat">
+            <div class="k">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              PV（1h）
+            </div>
+            <div class="v">1,284</div>
+            <div class="d muted">UV 862 · 会话 947</div>
+          </div>
+        </div>
+
+        <!-- 错误趋势 SVG -->
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline; gap: 12px;">
+            <h3>错误趋势</h3>
+            <span class="sub" style="margin: 0;">近 24 小时 · 按小时聚合</span>
+            <div class="legend" style="margin: 0 0 0 auto;">
+              <span class="key"><span class="swatch" style="background: var(--red);"></span>今日</span>
+              <span class="key"><span class="swatch" style="background: #52525b;"></span>昨日</span>
+            </div>
+          </div>
+          <svg viewBox="0 0 960 200" width="100%" height="200">
+            <g stroke="#1f1f23" stroke-width="1">
+              <line x1="0" y1="20" x2="960" y2="20"/><line x1="0" y1="60" x2="960" y2="60"/>
+              <line x1="0" y1="100" x2="960" y2="100"/><line x1="0" y1="140" x2="960" y2="140"/>
+              <line x1="0" y1="180" x2="960" y2="180"/>
+            </g>
+            <path d="M0,168 L80,164 L160,170 L240,160 L320,166 L400,158 L480,164 L560,150 L640,156 L720,120 L800,96 L880,44 L960,70 L960,200 L0,200 Z"
+                  fill="rgba(248,113,113,0.08)"/>
+            <polyline points="0,168 80,164 160,170 240,160 320,166 400,158 480,164 560,150 640,156 720,120 800,96 880,44 960,70"
+                      fill="none" stroke="#f87171" stroke-width="2" stroke-linejoin="round"/>
+            <polyline points="0,150 80,146 160,152 240,148 320,150 400,144 480,150 560,146 640,148 720,144 800,146 880,142 960,148"
+                      fill="none" stroke="#52525b" stroke-width="1.6" stroke-dasharray="4 4"/>
+            <circle cx="880" cy="44" r="4" fill="#f87171"/>
+            <circle cx="880" cy="44" r="8" fill="none" stroke="rgba(248,113,113,0.35)"/>
+            <text x="880" y="28" text-anchor="middle" fill="#f87171" font-size="12" font-family="inherit">21:00 突增 26 条</text>
+          </svg>
+        </div>
+
+        <!-- 最近错误 -->
+        <div class="card">
+          <div style="display: flex; align-items: baseline;">
+            <h3>最近错误</h3>
+            <span class="sub" style="margin: 0 0 0 12px;">按指纹聚合 · 点击行进入详情</span>
+          </div>
+          <table>
+            <tr><th>类型</th><th>内容</th><th>状态</th><th>次数</th><th>影响用户</th><th>最近发生</th></tr>
+            <tr class="rowlink" onclick="show('error-detail', document.querySelector('[data-page=performance]'))">
+              <td><span class="badge red">JS 错误</span></td>
+              <td><span class="msg">TypeError: amount.toFixed is not a function</span></td>
+              <td><span class="badge gray">open</span></td>
+              <td><b>26</b></td><td>18 人</td><td>2 分钟前</td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="badge orange">资源</span></td>
+              <td><span class="msg">GET /assets/hero.webp → 404（image）</span></td>
+              <td><span class="badge gray">open</span></td>
+              <td><b>5</b></td><td>4 人</td><td>11 分钟前</td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="badge blue">AJAX</span></td>
+              <td><span class="msg">POST /api/orders → 500</span></td>
+              <td><span class="badge gray">open</span></td>
+              <td><b>3</b></td><td>3 人</td><td>26 分钟前</td>
+            </tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 错误 ============ -->
+      <section class="page" id="page-errors">
+        <div class="page-header">
+          <div>
+            <h1>错误</h1>
+            <div class="desc">按服务端指纹聚合 · release v2.3.1 上新 2 个错误</div>
+          </div>
+          <div class="actions">
+            <span class="tabs">
+              <span class="tab-chip active">全部</span>
+              <span class="tab-chip">未处理</span>
+              <span class="tab-chip">已解决</span>
+              <span class="tab-chip">忽略</span>
+            </span>
+            <span class="chip">v2.3.1 ▾</span>
+          </div>
+        </div>
+
+        <!-- 9 分类卡 -->
+        <div class="row" style="grid-template-columns: repeat(9, 1fr); margin-bottom: 14px;">
+          <div class="card stat" style="padding: 12px 14px;"><div class="k">JS 错误</div><div class="v" style="font-size: 20px;">8</div></div>
+          <div class="card stat" style="padding: 12px 14px;"><div class="k">Promise</div><div class="v" style="font-size: 20px;">3</div></div>
+          <div class="card stat" style="padding: 12px 14px;"><div class="k">AJAX</div><div class="v" style="font-size: 20px;">4</div></div>
+          <div class="card stat" style="padding: 12px 14px;"><div class="k">资源·script</div><div class="v" style="font-size: 20px;">1</div></div>
+          <div class="card stat" style="padding: 12px 14px;"><div class="k">资源·image</div><div class="v" style="font-size: 20px;">4</div></div>
+          <div class="card stat" style="padding: 12px 14px;"><div class="k">资源·css</div><div class="v" style="font-size: 20px;">0</div></div>
+          <div class="card stat" style="padding: 12px 14px;"><div class="k">白屏</div><div class="v" style="font-size: 20px;">0</div></div>
+          <div class="card stat" style="padding: 12px 14px;"><div class="k">自定义</div><div class="v" style="font-size: 20px;">2</div></div>
+          <div class="card stat" style="padding: 12px 14px; opacity: 0.5;"><div class="k">Promise 拒绝<span class="badge gray" style="margin-left: 5px;">未启用</span></div><div class="v" style="font-size: 20px;">—</div></div>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+          <span class="tabs">
+            <span class="tab-chip active">全部 23</span>
+            <span class="tab-chip">机型</span>
+            <span class="tab-chip">浏览器</span>
+            <span class="tab-chip">OS</span>
+            <span class="tab-chip">版本</span>
+            <span class="tab-chip">页面</span>
+            <span class="tab-chip">网络</span>
+          </span>
+        </div>
+
+        <div class="card">
+          <table>
+            <tr><th>类型</th><th>内容</th><th>状态</th><th>次数</th><th>影响用户占比</th><th>最近发生</th><th></th></tr>
+            <tr class="rowlink" onclick="show('error-detail', document.querySelector('[data-page=performance]'))">
+              <td><span class="badge red">JS 错误</span> <span class="badge blue" title="本 release 新出现">NEW</span></td>
+              <td><span class="msg">TypeError: amount.toFixed is not a function</span></td>
+              <td><span class="badge gray">open</span></td>
+              <td><b>26</b></td><td>62%</td><td>2 分钟前</td>
+              <td class="dim">详情 →</td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="badge orange">资源</span></td>
+              <td><span class="msg">GET /assets/hero.webp → 404（image）</span></td>
+              <td><span class="badge gray">open</span></td>
+              <td><b>5</b></td><td>14%</td><td>11 分钟前</td>
+              <td class="dim">详情 →</td>
+            </tr>
+            <tr class="rowlink" onclick="show('error-ajax', document.querySelector('[data-page=errors]'))">
+              <td><span class="badge blue">AJAX</span></td>
+              <td><span class="msg">POST /api/orders → 500（fetch）</span></td>
+              <td><span class="badge gray">open</span></td>
+              <td><b>3</b></td><td>9%</td><td>26 分钟前</td>
+              <td class="dim">详情 →</td>
+            </tr>
+            <tr class="rowlink">
+              <td><span class="badge gray">Promise</span></td>
+              <td><span class="msg">UnhandledRejection: Failed to fetch</span></td>
+              <td><span class="badge green">resolved</span></td>
+              <td><b>2</b></td><td>6%</td><td>3 小时前</td>
+              <td class="dim">详情 →</td>
+            </tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 错误详情 ============ -->
+      <section class="page" id="page-error-detail">
+        <div class="page-header">
+          <div>
+            <h1 style="display: flex; align-items: center; gap: 10px;">
+              <span class="badge red">JS 错误</span>
+              TypeError: amount.toFixed is not a function
+            </h1>
+            <div class="desc">首次发生 2 小时前 · 最近 2 分钟前 · 共 26 次 · 影响 18 人 · release v2.3.1 <span class="badge blue" style="margin-left: 6px;">NEW</span></div>
+          </div>
+          <div class="actions">
+            <button class="btn">标记已解决</button>
+            <button class="btn">忽略</button>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1.6fr 1fr;">
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div class="card">
+              <h3>符号化堆栈</h3>
+              <p class="sub">已按 release v2.3.1 的 SourceMap 还原至源码位置</p>
+              <div class="stack">
+                <div class="frame"><span class="loc">at </span><span class="fn">OrderForm.submit</span><span class="loc">src/order/form.ts:142:18</span></div>
+                <div class="frame hot"><span class="loc">at </span><span class="fn">formatAmount</span><span class="loc">src/order/money.ts:87:21</span><span class="mapped">← 源码 money.ts:87</span></div>
+                <div class="frame"><span class="loc">at </span><span class="fn">HTMLButtonElement.handler</span><span class="loc">src/order/form.ts:96:5</span></div>
+              </div>
+              <div style="margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); background: var(--card-2);">
+                <span style="color: var(--dim);">86 |</span> export function formatAmount(amount: unknown) {<br />
+                <span style="color: var(--dim);">87 |</span>   <span style="background: var(--red-tint); color: var(--red);">return amount.toFixed(2)</span>  <span style="color: var(--dim);">// ← amount 为 string 时抛出</span><br />
+                <span style="color: var(--dim);">88 |</span> }
+              </div>
+            </div>
+            <div class="card">
+              <h3>面包屑时间线</h3>
+              <p class="sub">错误发生前用户行为轨迹（最近 6 条）</p>
+              <div class="crumb">
+                <span class="t">14:02:11.402</span>
+                <span class="ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                <span class="what">路由切换 <b>/cart → /checkout</b></span>
+              </div>
+              <div class="crumb">
+                <span class="t">14:02:12.018</span>
+                <span class="ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.17a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg></span>
+                <span class="what">点击 <b>提交订单</b>（button.submit-order）</span>
+              </div>
+              <div class="crumb">
+                <span class="t">14:02:12.105</span>
+                <span class="ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2"/><path d="M15.4 22a1 1 0 0 0 1.048-1.4 8 8 0 1 1 0-17.2A1 1 0 0 0 15.4 2"/></svg></span>
+                <span class="what">XHR <b>POST /api/orders</b> → 201（88ms）</span>
+              </div>
+              <div class="crumb">
+                <span class="t">14:02:12.196</span>
+                <span class="ico" style="color: var(--red); border-color: rgba(248,113,113,0.3);"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg></span>
+                <span class="what"><b style="color: var(--red);">TypeError: amount.toFixed is not a function</b></span>
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div class="card">
+              <h3>环境与设备</h3>
+              <p class="sub">最近样本</p>
+              <div class="kv">
+                <span class="k">release</span><span>v2.3.1</span>
+                <span class="k">环境</span><span>production</span>
+                <span class="k">页面</span><span>/checkout</span>
+                <span class="k">浏览器</span><span>Chrome 130</span>
+                <span class="k">OS</span><span>macOS 15</span>
+                <span class="k">网络</span><span>4g</span>
+                <span class="k">viewId</span><span>/checkout/{param}</span>
+              </div>
+            </div>
+            <div class="card">
+              <h3>请求上下文</h3>
+              <p class="sub">AJAX 错误的 HTTP 现场（供后端 traceId 关联）</p>
+              <div class="kv">
+                <span class="k">请求</span><span><b>POST /api/orders</b> → 500</span>
+                <span class="k">耗时</span><span>640ms</span>
+                <span class="k">请求体</span><span class="msg" style="font-family: ui-monospace, Menlo, monospace;">{"amount":"12.345"}</span>
+                <span class="k">traceId</span><span class="msg" style="font-family: ui-monospace, Menlo, monospace;">00-4f8a…c21-01</span>
+              </div>
+              <div style="margin-top: 10px;"><span class="badge blue" style="cursor: pointer;" onclick="show('api-detail', document.querySelector('[data-page=api]'))">查看接口详情 →</span></div>
+            </div>
+            <div class="card">
+              <h3>趋势</h3>
+              <p class="sub">近 24h 该指纹次数</p>
+              <svg viewBox="0 0 300 110" width="100%" height="110">
+                <g stroke="#1f1f23"><line x1="0" y1="20" x2="300" y2="20"/><line x1="0" y1="60" x2="300" y2="60"/><line x1="0" y1="100" x2="300" y2="100"/></g>
+                <path d="M0,96 40,92 80,95 120,88 160,90 200,80 240,52 280,14 300,26 L300,110 0,110 Z" fill="rgba(248,113,113,0.08)"/>
+                <polyline points="0,96 40,92 80,95 120,88 160,90 200,80 240,52 280,14 300,26" fill="none" stroke="#f87171" stroke-width="2"/>
+              </svg>
+            </div>
+            <div class="card">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <h3 style="margin: 0;">AI 诊断 · 触发状态机</h3>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 12px; font-size: 12px;">
+                <div style="padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px;">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="badge gray">① 未诊断</span><span class="dim">分类在适用范围 + provider 已配置</span></div>
+                  <button class="btn primary" style="width: 100%; justify-content: center;">生成 AI 诊断</button>
+                  <div class="dim" style="font-size: 11px; margin-top: 6px;">手动触发 · 同指纹+堆栈 hash 缓存复用</div>
+                </div>
+                <div style="padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px;">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="badge orange">② 诊断中</span><span class="dim">异步 LLM 调用</span></div>
+                  <div style="height: 32px; border-radius: 8px; background: var(--card-2); display: flex; align-items: center; gap: 8px; padding: 0 12px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    <span class="muted">分析堆栈与面包屑上下文…</span>
+                  </div>
+                  <div class="dim" style="font-size: 11px; margin-top: 6px;">可离开页面，完成后回到本页查看</div>
+                </div>
+                <div style="padding: 10px 12px; border: 1px solid rgba(96, 165, 250, 0.3); border-radius: 8px; background: rgba(96, 165, 250, 0.05);">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="badge green">③ 已诊断 · 87%</span><span class="dim">gpt-4o · 12s · 缓存命中</span></div>
+                  <div style="font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 8px;">根因：formatAmount 未做类型收窄，接口返回 string 价格直接调 toFixed</div>
+                  <button class="btn primary" style="width: 100%; justify-content: center;" onclick="show('ai-report', document.querySelector('[data-page=errors]'))">查看完整报告</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 性能 ============ -->
+      <section class="page" id="page-performance">
+        <div class="page-header">
+          <div>
+            <h1>性能</h1>
+            <div class="desc">Web Vitals 按官方口径采集 · 按页面维度下钻 · 分位数据按小时聚合 · release v2.3.1</div>
+          </div>
+          <div class="actions"><span class="chip">近 24 小时 ▾</span></div>
+        </div>
+
+        <!-- 页面维度选择（性能天然是页面级指标） -->
+        <div style="margin-bottom: 14px; display: flex; align-items: center; gap: 12px;">
+          <span class="tabs">
+            <span class="tab-chip">全部页面</span>
+            <span class="tab-chip active">/checkout</span>
+            <span class="tab-chip">/orders</span>
+            <span class="tab-chip">/products/*</span>
+            <span class="tab-chip">/</span>
+          </span>
+          <span class="dim" style="font-size: 12px;">当前范围：/checkout · 样本 1,204 · 视图 842</span>
+        </div>
+
+        <div class="row" style="grid-template-columns: repeat(5, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">LCP P75</div><div class="v">2.1s</div><div class="d"><span class="badge green">良好 ≤2.5s</span></div></div>
+          <div class="card stat"><div class="k">CLS P75</div><div class="v">0.03</div><div class="d"><span class="badge green">良好 ≤0.1</span></div></div>
+          <div class="card stat"><div class="k">INP P75</div><div class="v">182ms</div><div class="d"><span class="badge green">良好 ≤200ms</span></div></div>
+          <div class="card stat"><div class="k">FCP P75</div><div class="v">1.2s</div><div class="d"><span class="badge green">良好 ≤1.8s</span></div></div>
+          <div class="card stat"><div class="k">TTFB P75</div><div class="v">320ms</div><div class="d"><span class="badge orange">需改进 ≤800ms</span></div></div>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline;">
+            <h3>页面性能排行</h3>
+            <span class="sub" style="margin: 0 0 0 12px;">全站各路由 Vitals 对比 · 按样本数排序 · 点击行切换上方页面范围</span>
+          </div>
+          <table>
+            <tr><th>页面</th><th>样本数</th><th>LCP P75</th><th>CLS P75</th><th>INP P75</th><th>FCP P75</th><th>评价</th></tr>
+            <tr style="cursor: pointer;">
+              <td><b>/checkout</b> <span class="badge gray">当前</span></td><td>1,204</td>
+              <td><span style="color: var(--orange);"><b>2.1s</b></span></td><td>0.03</td><td><span style="color: var(--orange);">182ms</span></td><td>1.2s</td>
+              <td><span class="badge orange">需关注</span></td>
+            </tr>
+            <tr style="cursor: pointer;">
+              <td>/orders</td><td>986</td>
+              <td>1.6s</td><td>0.02</td><td>140ms</td><td>0.9s</td>
+              <td><span class="badge green">良好</span></td>
+            </tr>
+            <tr style="cursor: pointer;">
+              <td>/products/*</td><td>842</td>
+              <td>1.4s</td><td>0.04</td><td>156ms</td><td>1.1s</td>
+              <td><span class="badge green">良好</span></td>
+            </tr>
+            <tr style="cursor: pointer;">
+              <td>/</td><td>1,801</td>
+              <td><span style="color: var(--red);"><b>2.8s</b></span></td><td>0.02</td><td>120ms</td><td>1.4s</td>
+              <td><span class="badge red">差（banner 图未压缩）</span></td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline; gap: 12px;">
+            <h3>LCP 趋势</h3>
+            <span class="sub" style="margin: 0;">近 24 小时</span>
+            <div class="legend" style="margin: 0 0 0 auto;">
+              <span class="key"><span class="swatch" style="background: #fafafa;"></span>P50</span>
+              <span class="key"><span class="swatch" style="background: var(--blue);"></span>P75</span>
+              <span class="key"><span class="swatch" style="background: var(--orange);"></span>P95</span>
+            </div>
+          </div>
+          <svg viewBox="0 0 960 220" width="100%" height="220">
+            <g stroke="#1f1f23"><line x1="0" y1="20" x2="960" y2="20"/><line x1="0" y1="70" x2="960" y2="70"/><line x1="0" y1="120" x2="960" y2="120"/><line x1="0" y1="170" x2="960" y2="170"/><line x1="0" y1="200" x2="960" y2="200"/></g>
+            <line x1="0" y1="88" x2="960" y2="88" stroke="rgba(251,191,36,0.4)" stroke-dasharray="5 5"/>
+            <text x="8" y="82" fill="var(--orange)" font-size="11" font-family="inherit">2.5s 良好线</text>
+            <polyline points="0,150 96,146 192,150 288,140 384,146 480,138 576,144 672,132 768,138 864,120 960,128" fill="none" stroke="#fafafa" stroke-width="1.8"/>
+            <polyline points="0,120 96,116 192,120 288,108 384,116 480,104 576,112 672,96 768,104 864,76 960,86" fill="none" stroke="#60a5fa" stroke-width="2"/>
+            <polyline points="0,76 96,70 192,76 288,60 384,70 480,54 576,64 672,44 768,56 864,28 960,40" fill="none" stroke="#fbbf24" stroke-width="2"/>
+            <circle cx="864" cy="28" r="4" fill="#fbbf24"/>
+          </svg>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline;">
+            <h3>导航耗时分解（Navigation Timing）</h3>
+            <span class="sub" style="margin: 0 0 0 12px;">/checkout 页 P75 · 阶段条按占比</span>
+          </div>
+          <div style="display: flex; height: 26px; border-radius: 8px; overflow: hidden; font-size: 11px; color: #09090b; font-weight: 600;">
+            <div style="flex: 3; background: #a1a1aa; display: flex; align-items: center; justify-content: center;" title="Redirect">3%</div>
+            <div style="flex: 6; background: #8b8b93; display: flex; align-items: center; justify-content: center;" title="DNS + TCP + TLS">6%</div>
+            <div style="flex: 18; background: #71717a; color: #fff; display: flex; align-items: center; justify-content: center;">请求/响应 18%</div>
+            <div style="flex: 34; background: #52525b; color: #fff; display: flex; align-items: center; justify-content: center;">HTML 解析 34%</div>
+            <div style="flex: 28; background: #3f3f46; color: #fff; display: flex; align-items: center; justify-content: center;">资源加载 28%</div>
+            <div style="flex: 11; background: var(--red); color: #fff; display: flex; align-items: center; justify-content: center;">渲染 11%</div>
+          </div>
+          <div class="kv" style="margin-top: 12px; grid-template-columns: repeat(3, auto); justify-content: start; column-gap: 22px;">
+            <span class="k">TTFB P75</span><span style="margin-right: 12px;">320ms</span>
+            <span class="k">DOM Interactive</span><span style="margin-right: 12px;">1.4s</span>
+            <span class="k">Load Event</span><span>2.6s</span>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1fr 1fr;">
+          <div class="card">
+            <h3>LongTask 分布</h3>
+            <p class="sub">近 24h 长任务三档分布（50-100 / 100-200 / ≥200ms）</p>
+            <div style="display: flex; height: 26px; border-radius: 8px; overflow: hidden; font-size: 12px; color: #09090b; font-weight: 600;">
+              <div style="flex: 62; background: var(--green); display: flex; align-items: center; justify-content: center;">62%</div>
+              <div style="flex: 28; background: var(--orange); display: flex; align-items: center; justify-content: center;">28%</div>
+              <div style="flex: 10; background: var(--red); color: #fff; display: flex; align-items: center; justify-content: center;">10%</div>
+            </div>
+            <div class="kv" style="margin-top: 14px;">
+              <span class="k">总任务数</span><span>1,842</span>
+              <span class="k">最差任务</span><span>312ms（checkout 页）</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>资源耗时 TOP</h3>
+            <p class="sub">按类型分阶段聚合</p>
+            <table>
+              <tr><th>类型</th><th>平均耗时</th><th>请求数</th></tr>
+              <tr><td>script</td><td><b>412ms</b></td><td>18</td></tr>
+              <tr><td>image</td><td>286ms</td><td>42</td></tr>
+              <tr><td>css</td><td>94ms</td><td>6</td></tr>
+              <tr><td>xmlhttprequest</td><td>88ms</td><td>120</td></tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- AI 诊断报告（错误工作流内的动作与结论） -->
+        <div class="card" id="ai-report-card" style="margin-top: 14px; border-color: rgba(96, 165, 250, 0.25);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="badge blue">AI 诊断报告</span>
+            <span class="badge green">置信度 87%</span>
+            <span class="dim" style="font-size: 11.5px;">gpt-4o · 12.4s · 缓存命中 · 诊断于 10 分钟前</span>
+            <span style="margin-left: auto; display: flex; gap: 8px;">
+              <button class="btn">重新诊断</button>
+              <button class="btn">复制报告</button>
+            </span>
+          </div>
+
+          <div style="margin-top: 16px;">
+            <div style="font-size: 12px; color: var(--dim); margin-bottom: 6px;">根因一句话</div>
+            <div style="font-size: 14px; line-height: 1.6;">
+              <b>formatAmount</b> 未做类型收窄——切套餐后价格字段从 number 变为 <b>string</b>（v2.3.0 起 /api/products 返回分单位），第 87 行直接调用 <b>toFixed</b> 抛出 TypeError。
+            </div>
+          </div>
+
+          <div style="margin-top: 16px;">
+            <div style="font-size: 12px; color: var(--dim); margin-bottom: 6px;">修复建议（可直接套用）</div>
+            <div style="position: relative; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.8; background: var(--card-2); border-radius: 8px; padding: 12px 14px; color: var(--muted);">
+              <span style="color: var(--dim);">src/order/money.ts:87</span><br />
+              <span style="color: var(--red);">- return amount.toFixed(2)</span><br />
+              <span style="color: var(--green);">+ return Number(amount).toFixed(2)</span><br />
+              <span style="color: var(--dim);">// 建议同步在 /api/products 响应层将 price 统一序列化为 number</span>
+              <button class="btn" style="position: absolute; top: 10px; right: 10px; height: 26px; padding: 0 10px; font-size: 11.5px;">复制片段</button>
+            </div>
+          </div>
+
+          <div style="margin-top: 16px;">
+            <div style="font-size: 12px; color: var(--dim); margin-bottom: 8px;">证据链（每条结论可回溯核对）</div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: var(--card-2); border-radius: 8px; font-size: 12.5px;">
+                <span class="badge gray">堆栈帧 ②</span>
+                <span class="muted">money.ts:87:21 —— toFixed 调用点，与报告一致</span>
+                <span class="dim" style="margin-left: auto;">定位 →</span>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: var(--card-2); border-radius: 8px; font-size: 12.5px;">
+                <span class="badge gray">面包屑 ④</span>
+                <span class="muted">用户点击「切换套餐 pro」后 12ms 触发提交——类型变化的触发时机</span>
+                <span class="dim" style="margin-left: auto;">定位 →</span>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: var(--card-2); border-radius: 8px; font-size: 12.5px;">
+                <span class="badge gray">接口 ③</span>
+                <span class="muted">POST /api/orders → 500，响应体即本错误的 message</span>
+                <span class="dim" style="margin-left: auto;">接口详情 →</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 16px; display: flex; align-items: center; gap: 12px;">
+            <span class="badge gray">有用</span>
+            <span class="badge gray">无用</span>
+            <span class="dim" style="font-size: 11.5px;">无 sourcemap 时此处显示降级声明 · 证据已快照（事件 TTL 过期后仍可核对）· 同指纹+堆栈 hash 已缓存</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ AJAX 请求异常详情（分类差异化模板） ============ -->
+      <section class="page" id="page-error-ajax">
+        <div class="page-header">
+          <div>
+            <h1 style="display: flex; align-items: center; gap: 10px;">
+              <span class="badge blue">AJAX</span>
+              POST /api/orders → 500
+            </h1>
+            <div class="desc">fetch 通道 · 近 24h 3 次 · 影响 3 人 · 首次 1 小时前 · 最近 26 分钟前 · release v2.3.1</div>
+          </div>
+          <div class="actions">
+            <button class="btn" onclick="show('errors', document.querySelector('[data-page=errors]'))">← 返回异常分析</button>
+            <button class="btn">标记已解决</button>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">失败次数</div><div class="v">3</div><div class="d muted">500 ×3</div></div>
+          <div class="card stat"><div class="k">影响用户</div><div class="v">3</div><div class="d muted">trackerId 去重</div></div>
+          <div class="card stat"><div class="k">平均耗时</div><div class="v">604ms</div><div class="d muted">失败请求</div></div>
+          <div class="card stat"><div class="k">触发环境</div><div class="v" style="font-size: 16px;">/checkout</div><div class="d muted">全部集中于提交动作</div></div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1.2fr 1fr;">
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <!-- HTTP 现场：接口请求异常的主证据 -->
+            <div class="card">
+              <h3>HTTP 现场</h3>
+              <p class="sub">fetch 通道 · 请求/响应体采样（脱敏 + 截断 2048）</p>
+              <div class="kv" style="grid-template-columns: 76px 1fr; align-items: center;">
+                <span class="k">请求</span><span><b>POST</b> http://api.example.com/api/orders</span>
+                <span class="k">状态</span><span><span class="badge red">500 Internal Server Error</span></span>
+                <span class="k">耗时</span><span>640ms</span>
+                <span class="k">traceId</span><span class="msg" style="font-family: ui-monospace, Menlo, monospace;">00-4f8a2b7c…c21-01</span>
+              </div>
+              <div style="margin-top: 12px;">
+                <div style="font-size: 12px; color: var(--dim); margin-bottom: 5px;">请求体（脱敏后）</div>
+                <div style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.7; color: var(--muted); background: var(--card-2); border-radius: 8px; padding: 10px 12px;">
+                  { "plan": "pro", "itemCount": 3, <span style="color: var(--fg);">"amount": "12.345"</span>, "coupon": "[credential]" }
+                </div>
+              </div>
+              <div style="margin-top: 10px;">
+                <div style="font-size: 12px; color: var(--dim); margin-bottom: 5px;">响应体</div>
+                <div style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.7; color: var(--red); background: var(--card-2); border-radius: 8px; padding: 10px 12px;">
+                  TypeError: amount.toFixed is not a function
+                </div>
+              </div>
+              <div style="margin-top: 12px; display: flex; gap: 10px; align-items: center;">
+                <span class="badge blue" style="cursor: pointer;" onclick="show('api-detail', document.querySelector('[data-page=api]'))">查看接口详情 →</span>
+                <span class="badge gray">响应体与 JS 错误 TypeError 同源</span>
+              </div>
+            </div>
+            <!-- 用户行为轨迹 -->
+            <div class="card">
+              <h3>用户行为轨迹</h3>
+              <p class="sub">失败请求前用户做了什么（面包屑时间线，最近 6 条）</p>
+              <div class="crumb">
+                <span class="t">14:02:09.880</span>
+                <span class="ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
+                <span class="what">路由切换 <b>/cart → /checkout</b></span>
+              </div>
+              <div class="crumb">
+                <span class="t">14:02:10.104</span>
+                <span class="ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
+                <span class="what">曝光 <b>coupon-entry</b>（停留 1.2s）</span>
+              </div>
+              <div class="crumb">
+                <span class="t">14:02:11.402</span>
+                <span class="ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg></span>
+                <span class="what">点击 <b>切换套餐 pro</b>（button.plan-pro）</span>
+              </div>
+              <div class="crumb">
+                <span class="t">14:02:11.402</span>
+                <span class="ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.17a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg></span>
+                <span class="what">点击 <b>提交订单</b>（button.submit-order）</span>
+              </div>
+              <div class="crumb">
+                <span class="t">14:02:11.402</span>
+                <span class="ico" style="color: var(--red); border-color: rgba(248,113,113,0.3);"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2"/><path d="M15.4 22a1 1 0 0 0 1.048-1.4 8 8 0 1 1 0-17.2A1 1 0 0 0 15.4 2"/></svg></span>
+                <span class="what"><b style="color: var(--red);">fetch POST /api/orders 失败 → 500</b>（640ms）</span>
+              </div>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div class="card">
+              <h3>环境与设备</h3>
+              <p class="sub">最近样本</p>
+              <div class="kv">
+                <span class="k">页面</span><span>/checkout</span>
+                <span class="k">浏览器</span><span>Chrome 130</span>
+                <span class="k">OS</span><span>macOS 15</span>
+                <span class="k">网络</span><span>4g</span>
+                <span class="k">viewId</span><span>/checkout/{param}</span>
+                <span class="k">sessionId</span><span class="msg" style="font-family: ui-monospace, Menlo, monospace;">sess-9f2</span>
+              </div>
+            </div>
+            <div class="card">
+              <h3>关联分析</h3>
+              <div style="display: flex; flex-direction: column; gap: 10px;">
+                <span class="badge blue" style="cursor: pointer; justify-content: center;" onclick="show('error-detail', document.querySelector('[data-page=errors]'))">同源 JS 错误：TypeError（堆栈视角）</span>
+                <span class="badge blue" style="cursor: pointer; justify-content: center;" onclick="show('api-detail', document.querySelector('[data-page=api]'))">接口视角：/api/orders 详情</span>
+                <span class="badge gray" style="justify-content: center;">同一根因的三种视角</span>
+              </div>
+              <div style="margin-top: 12px; font-size: 12px; color: var(--muted); line-height: 1.6;">
+                同一后端异常在前端表现为三类信号：<b>JS 错误</b>（响应处理栈）、<b>AJAX 错误</b>（本页，HTTP 现场）、<b>接口聚合</b>（状态码/耗时）——交叉查看定位最快
+              </div>
+            </div>
+            <div class="card">
+              <h3>失败趋势</h3>
+              <p class="sub">近 24h</p>
+              <svg viewBox="0 0 300 100" width="100%" height="100">
+                <g stroke="#1f1f23"><line x1="0" y1="20" x2="300" y2="20"/><line x1="0" y1="55" x2="300" y2="55"/><line x1="0" y1="90" x2="300" y2="90"/></g>
+                <g fill="var(--red)">
+                  <rect x="10" y="84" width="14" height="6" rx="2"/>
+                  <rect x="60" y="80" width="14" height="10" rx="2"/>
+                  <rect x="210" y="64" width="14" height="26" rx="2"/>
+                  <rect x="260" y="58" width="14" height="32" rx="2"/>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 告警 ============ -->
+      <section class="page" id="page-alerts">
+        <div class="page-header">
+          <div>
+            <h1>告警</h1>
+            <div class="desc">突增与阈值规则 · 触发后 15 分钟冷却防轰炸 · webhook 投递</div>
+          </div>
+          <div class="actions"><button class="btn primary">+ 新建规则</button></div>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline;">
+            <h3>规则</h3>
+            <span class="sub" style="margin: 0 0 0 12px;">2 条 · 启用 1</span>
+          </div>
+          <table>
+            <tr><th>名称</th><th>类型</th><th>条件</th><th>冷却</th><th>启用</th><th>最近触发</th></tr>
+            <tr>
+              <td><b>错误突增</b></td>
+              <td><span class="badge red">error_spike</span></td>
+              <td class="muted">近 15min &gt; max(20, 6h 均值 ×3)</td>
+              <td class="muted">15min</td>
+              <td><span class="switch on"></span></td>
+              <td><span class="badge red">21:00 已投递</span></td>
+            </tr>
+            <tr>
+              <td><b>LCP 超阈</b></td>
+              <td><span class="badge orange">perf_threshold</span></td>
+              <td class="muted">LCP P75 &gt; 4000ms 持续 2 桶</td>
+              <td class="muted">30min</td>
+              <td><span class="switch"></span></td>
+              <td class="dim">—</td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3>触发记录</h3>
+          <p class="sub">最近 50 条</p>
+          <table>
+            <tr><th>时间</th><th>规则</th><th>摘要</th><th>投递</th></tr>
+            <tr>
+              <td class="dim">2026-10-13 21:00</td>
+              <td>错误突增</td>
+              <td class="muted">近 15min 错误 26 条（基线均值 8.1，阈值 24.3）</td>
+              <td><span class="badge green">webhook 200</span></td>
+            </tr>
+            <tr>
+              <td class="dim">2026-10-13 20:45</td>
+              <td>错误突增</td>
+              <td class="muted">投递失败（hook 超时），下轮重试</td>
+              <td><span class="badge orange">重试中</span></td>
+            </tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 实时监控 ============ -->
+      <section class="page" id="page-realtime">
+        <div class="page-header">
+          <div>
+            <h1>实时监控<span class="badge green" style="margin-left: 10px;">● LIVE</span></h1>
+            <div class="desc">当前在线会话与事件流 · SSE 实时推送</div>
+          </div>
+          <div class="actions"><span class="chip">自动刷新 3s</span></div>
+        </div>
+        <div class="row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">在线会话</div><div class="v">37</div><div class="d muted">近 5 分钟活跃</div></div>
+          <div class="card stat"><div class="k">当前页面</div><div class="v" style="font-size: 18px;">/checkout</div><div class="d muted">14 会话停留</div></div>
+          <div class="card stat"><div class="k">事件速率</div><div class="v">8.2/s</div><div class="d muted">信封入队正常</div></div>
+          <div class="card stat"><div class="k">实时错误</div><div class="v" style="color: var(--red);">2</div><div class="d" style="color: var(--red);">近 1 分钟</div></div>
+        </div>
+        <div class="row" style="grid-template-columns: 1.4fr 1fr;">
+          <div class="card">
+            <h3>实时事件流</h3>
+            <p class="sub">最新事件置顶 · SSE 推送</p>
+            <table>
+              <tr><td class="dim" style="width: 90px;">10:52:03</td><td><span class="badge green">PV</span></td><td class="msg">/checkout · Chrome 130 · 4g</td></tr>
+              <tr><td class="dim">10:52:01</td><td><span class="badge red">错误</span></td><td class="msg">TypeError: amount.toFixed … · /checkout</td></tr>
+              <tr><td class="dim">10:51:58</td><td><span class="badge blue">track</span></td><td class="msg">submit_order · props: {plan: "pro"}</td></tr>
+              <tr><td class="dim">10:51:52</td><td><span class="badge green">api</span></td><td class="msg">POST /api/orders → 201 · 88ms</td></tr>
+              <tr><td class="dim">10:51:44</td><td><span class="badge green">PV</span></td><td class="msg">/orders · Safari 18 · wifi</td></tr>
+            </table>
+          </div>
+          <div class="card">
+            <h3>活跃页面 TOP</h3>
+            <p class="sub">当前在线会话分布</p>
+            <div style="display: flex; flex-direction: column; gap: 10px; font-size: 12.5px;">
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/checkout</span><span class="muted">14</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 78%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/orders</span><span class="muted">9</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 50%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/products/42</span><span class="muted">8</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 44%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/</span><span class="muted">6</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 33%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ API 监控 ============ -->
+      <section class="page" id="page-api">
+        <div class="page-header">
+          <div>
+            <h1>API 监控</h1>
+            <div class="desc">成功请求抽样上报（apiSampleRate 0.1）· 调用量按采样率校正 · 失败全量来自 error.http</div>
+          </div>
+          <div class="actions"><span class="chip">近 24 小时 ▾</span></div>
+        </div>
+        <div class="row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">总调用（校正估算）</div><div class="v">48.2k</div><div class="d muted">原始样本 4,821 · ×10</div></div>
+          <div class="card stat"><div class="k">成功率</div><div class="v">99.2%</div><div class="d muted">5xx 38 · 4xx 12</div></div>
+          <div class="card stat"><div class="k">P75 耗时</div><div class="v">88ms</div><div class="d" style="color: var(--green);">P95 240ms</div></div>
+          <div class="card stat"><div class="k">慢接口（&gt;1s）</div><div class="v" style="color: var(--orange);">3</div><div class="d muted">/api/orders/search</div></div>
+        </div>
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline; gap: 12px;">
+            <h3>调用量与错误趋势</h3>
+            <span class="sub" style="margin: 0;">近 24 小时 · 按小时</span>
+            <div class="legend" style="margin: 0 0 0 auto;">
+              <span class="key"><span class="swatch" style="background: #fafafa;"></span>成功（估算）</span>
+              <span class="key"><span class="swatch" style="background: var(--red);"></span>失败（全量）</span>
+            </div>
+          </div>
+          <svg viewBox="0 0 960 200" width="100%" height="200">
+            <g stroke="#1f1f23"><line x1="0" y1="30" x2="960" y2="30"/><line x1="0" y1="80" x2="960" y2="80"/><line x1="0" y1="130" x2="960" y2="130"/><line x1="0" y1="180" x2="960" y2="180"/></g>
+            <g fill="rgba(250,250,250,0.14)">
+              <rect x="10" y="70" width="40" height="110" rx="3"/><rect x="90" y="66" width="40" height="114" rx="3"/>
+              <rect x="170" y="72" width="40" height="108" rx="3"/><rect x="250" y="60" width="40" height="120" rx="3"/>
+              <rect x="330" y="68" width="40" height="112" rx="3"/><rect x="410" y="58" width="40" height="122" rx="3"/>
+              <rect x="490" y="66" width="40" height="114" rx="3"/><rect x="570" y="62" width="40" height="118" rx="3"/>
+              <rect x="650" y="70" width="40" height="110" rx="3"/><rect x="730" y="56" width="40" height="124" rx="3"/>
+              <rect x="810" y="64" width="40" height="116" rx="3"/><rect x="890" y="60" width="40" height="120" rx="3"/>
+            </g>
+            <g fill="var(--red)">
+              <rect x="735" y="150" width="30" height="30" rx="3"/>
+              <rect x="895" y="162" width="30" height="18" rx="3"/>
+            </g>
+          </svg>
+        </div>
+        <div class="card">
+          <h3>接口排行</h3>
+          <p class="sub">按调用量 · 状态码分布 · 耗时分位</p>
+          <table>
+            <tr><th>接口</th><th>方法</th><th>调用量（估算）</th><th>成功率</th><th>P50</th><th>P95</th><th>状态分布</th></tr>
+            <tr><td>/api/products</td><td><span class="badge green">GET</span></td><td>21.4k</td><td>100%</td><td>32ms</td><td>78ms</td><td class="muted">2xx 100%</td></tr>
+            <tr class="rowlink" onclick="show('api-detail', document.querySelector('[data-page=api]'))">
+              <td><b>/api/orders</b></td><td><span class="badge blue">POST</span></td><td>8.2k</td><td>99.6%</td><td>88ms</td><td>210ms</td><td><span class="muted">2xx</span> <span style="color: var(--red);">13× 500</span></td><td class="dim">详情 →</td>
+            </tr>
+            <tr><td>/api/orders/search</td><td><span class="badge green">GET</span></td><td>6.1k</td><td>100%</td><td>640ms</td><td><span style="color: var(--orange);">1.8s</span></td><td class="muted">2xx 100%</td></tr>
+            <tr><td>/api/cart</td><td><span class="badge green">GET</span></td><td>5.8k</td><td>99.8%</td><td>41ms</td><td>96ms</td><td><span class="muted">2xx</span> <span style="color: var(--orange);">12× 404</span></td></tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ API 接口详情（API 监控的下钻） ============ -->
+      <section class="page" id="page-api-detail">
+        <div class="page-header">
+          <div>
+            <h1 style="display: flex; align-items: center; gap: 10px;">
+              <span class="badge blue">POST</span>
+              /api/orders
+            </h1>
+            <div class="desc">近 24h 8.2k 次调用（采样率校正估算）· 成功率 99.6% · 错误全量来自 error.http</div>
+          </div>
+          <div class="actions">
+            <button class="btn" onclick="show('api', document.querySelector('[data-page=api]'))">← 返回 API 监控</button>
+            <button class="btn">复制 traceId</button>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">调用量（估算）</div><div class="v">8.2k</div><div class="d muted">样本 820 · ×10</div></div>
+          <div class="card stat"><div class="k">成功率</div><div class="v">99.6%</div><div class="d" style="color: var(--red);">5xx 13 · 4xx 0</div></div>
+          <div class="card stat"><div class="k">P50 / P95</div><div class="v" style="font-size: 20px;">88 / 210ms</div><div class="d muted">P99 640ms</div></div>
+          <div class="card stat"><div class="k">关联错误</div><div class="v">13</div><div class="d muted">全部携带 traceId</div></div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1.3fr 1fr; margin-bottom: 14px;">
+          <div class="card">
+            <h3>调用量趋势</h3>
+            <p class="sub">近 24 小时 · 按小时 · 成功（估算）/ 失败（全量）</p>
+            <svg viewBox="0 0 640 180" width="100%" height="180">
+              <g stroke="#1f1f23"><line x1="0" y1="20" x2="640" y2="20"/><line x1="0" y1="60" x2="640" y2="60"/><line x1="0" y1="100" x2="640" y2="100"/><line x1="0" y1="140" x2="640" y2="140"/></g>
+              <g fill="rgba(250,250,250,0.14)">
+                <rect x="16" y="80" width="30" height="60" rx="3"/><rect x="86" y="76" width="30" height="64" rx="3"/>
+                <rect x="156" y="82" width="30" height="58" rx="3"/><rect x="226" y="70" width="30" height="70" rx="3"/>
+                <rect x="296" y="78" width="30" height="62" rx="3"/><rect x="366" y="66" width="30" height="74" rx="3"/>
+                <rect x="436" y="80" width="30" height="60" rx="3"/><rect x="506" y="74" width="30" height="66" rx="3"/>
+                <rect x="576" y="60" width="30" height="80" rx="3"/>
+              </g>
+              <rect x="580" y="128" width="22" height="12" rx="3" fill="var(--red)"/>
+            </svg>
+          </div>
+          <div class="card">
+            <h3>耗时分布</h3>
+            <p class="sub">近 24h 分位</p>
+            <div style="display: flex; flex-direction: column; gap: 12px; font-size: 12.5px;">
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>P50</span><span class="muted">88ms</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 22%; height: 100%; background: var(--green); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>P75</span><span class="muted">140ms</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 32%; height: 100%; background: var(--green); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>P90</span><span class="muted">186ms</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 44%; height: 100%; background: var(--orange); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>P95</span><span class="muted">210ms</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 52%; height: 100%; background: var(--orange); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>P99</span><span class="muted">640ms</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 88%; height: 100%; background: var(--red); border-radius: 4px;"></div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>失败样本</h3>
+          <p class="sub">5xx 全量上报 · 请求/响应体采样（脱敏截断 2048）· traceId 供后端日志关联</p>
+          <table>
+            <tr><th>时间</th><th>状态</th><th>耗时</th><th>请求体采样</th><th>响应采样</th><th>traceId</th><th>关联错误</th></tr>
+            <tr>
+              <td class="dim">10:52:01</td><td><span class="badge red">500</span></td><td>640ms</td>
+              <td class="msg">{"amount":"12.345",…}</td>
+              <td class="msg">TypeError: not a function</td>
+              <td class="msg" style="font-family: ui-monospace, Menlo, monospace;">00-4f8a…c21-01</td>
+              <td><span class="badge blue">查看 →</span></td>
+            </tr>
+            <tr>
+              <td class="dim">10:51:44</td><td><span class="badge red">500</span></td><td>588ms</td>
+              <td class="msg">{"amount":"9.9",…}</td>
+              <td class="msg">TypeError: not a function</td>
+              <td class="msg" style="font-family: ui-monospace, Menlo, monospace;">00-8b2e…9d-01</td>
+              <td><span class="badge blue">查看 →</span></td>
+            </tr>
+          </table>
+          <div style="margin-top: 12px; font-size: 12px; color: var(--muted);">失败样本与异常分析共享 traceId——后端拿 traceId 查服务端日志即可定位同次请求</div>
+        </div>
+      </section>
+
+      <!-- ============ 页面访问 ============ -->
+      <section class="page" id="page-visits">
+        <div class="page-header">
+          <div>
+            <h1>页面访问</h1>
+            <div class="desc">PV / UV（trackerId 去重）/ 会话数（sessionId）· 来源归因会话首 PV · 支持页面级与营销活动维度筛选</div>
+          </div>
+        </div>
+
+        <!-- 查询条件区：维度均为协议必然存在的字段（M8 规格 release/env/page/device），
+             下拉选项由项目实际数据动态填充 -->
+        <div class="filter-bar">
+          <span class="f-label">页面</span>
+          <span class="f-select">全部页面 ▾</span>
+          <span class="f-label">浏览器</span>
+          <span class="f-select">全部 ▾</span>
+          <span class="f-label">设备</span>
+          <span class="f-select">全部 ▾</span>
+          <span class="f-label">release</span>
+          <span class="f-select">全部 ▾</span>
+          <span class="grow"></span>
+          <span class="f-select">近 7 天 ▾</span>
+          <span class="f-select">按天 ▾</span>
+          <button class="btn primary">查 询</button>
+        </div>
+        <div class="row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">PV</div><div class="v">18,420</div><div class="d" style="color: var(--green);">↑ 12%</div></div>
+          <div class="card stat"><div class="k">UV</div><div class="v">3,481</div><div class="d" style="color: var(--green);">↑ 8%</div></div>
+          <div class="card stat"><div class="k">会话数</div><div class="v">4,920</div><div class="d muted">人均 1.4 会话</div></div>
+          <div class="card stat"><div class="k">平均停留</div><div class="v">2m 41s</div><div class="d muted">page_dwell 中位数</div></div>
+        </div>
+        <div class="card" style="margin-bottom: 14px;">
+          <h3>页面 TOP</h3>
+          <p class="sub">按 PV · 点击进入该页面的性能与错误下钻</p>
+          <div style="display: flex; flex-direction: column; gap: 11px; font-size: 12.5px;">
+            <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/checkout <span class="badge red" style="margin-left: 6px;">3 错误</span></span><span class="muted">4,201 · 23%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 92%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+            <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/orders</span><span class="muted">3,820 · 21%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 84%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+            <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/products/*</span><span class="muted">2,140 · 12%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 47%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+            <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/ <span class="badge red" style="margin-left: 6px;">hero.webp 404</span></span><span class="muted">1,801 · 10%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 40%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1.5fr 1fr; margin-bottom: 14px;">
+          <div class="card">
+            <h3>PV / UV 趋势</h3>
+            <p class="sub">近 7 天 · 按天</p>
+            <svg viewBox="0 0 640 200" width="100%" height="200">
+              <g stroke="#1f1f23"><line x1="0" y1="30" x2="640" y2="30"/><line x1="0" y1="80" x2="640" y2="80"/><line x1="0" y1="130" x2="640" y2="130"/><line x1="0" y1="180" x2="640" y2="180"/></g>
+              <path d="M20,60 110,52 200,66 290,44 380,58 470,36 560,30 560,180 20,180 Z" fill="rgba(250,250,250,0.05)"/>
+              <polyline points="20,60 110,52 200,66 290,44 380,58 470,36 560,30" fill="none" stroke="#fafafa" stroke-width="2"/>
+              <polyline points="20,120 110,116 200,124 290,108 380,116 470,100 560,96" fill="none" stroke="#60a5fa" stroke-width="2"/>
+              <circle cx="560" cy="30" r="3.5" fill="#fafafa"/><circle cx="560" cy="96" r="3.5" fill="#60a5fa"/>
+              <g fill="#71717a" font-size="11"><text x="14" y="196">10-07</text><text x="194" y="196">10-09</text><text x="374" y="196">10-11</text><text x="540" y="196">10-13</text></g>
+              <g fill="#71717a" font-size="11"><text x="524" y="24">PV 3.1k</text><text x="530" y="112">UV 620</text></g>
+            </svg>
+          </div>
+          <div class="card">
+            <h3>来源 TOP</h3>
+            <p class="sub">referrerHost + utm_source · 会话首 PV 归因</p>
+            <div style="display: flex; flex-direction: column; gap: 11px; font-size: 12.5px;">
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>google.com <span class="dim">(organic)</span></span><span class="muted">42%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 42%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>直接访问</span><span class="muted">31%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 31%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>weixin.qq.com <span class="dim">(referral)</span></span><span class="muted">14%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 14%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>utm_campaign=launch</span><span class="muted">13%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 13%; height: 100%; background: var(--green); border-radius: 4px;"></div></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom: 14px;">
+          <h3>推广活动归因（utm）</h3>
+          <p class="sub">utm_campaign 是外部投放链接上的市场参数（如 ?utm_campaign=spring），SDK 在落地页自动解析归因。无此类流量时本表为空 · 行随实际上报动态生成</p>
+          <table>
+            <tr><th>utm_campaign</th><th>PV</th><th>UV</th><th>平均停留</th><th>来源主要构成</th><th>PV 占比</th></tr>
+            <tr><td><b>618-sale</b></td><td><b>6,204</b></td><td>1,842</td><td>3m 12s</td><td class="muted">google 48% · 直接 30%</td><td>34%</td></tr>
+            <tr><td>launch</td><td>4,120</td><td>1,384</td><td>2m 04s</td><td class="muted">utm_source=nl 62%</td><td>22%</td></tr>
+            <tr><td>newyear</td><td>2,840</td><td>1,102</td><td>2m 41s</td><td class="muted">直接 55% · weixin 28%</td><td>15%</td></tr>
+            <tr><td class="dim">（无 utm · 自然流量）</td><td>5,256</td><td>1,640</td><td>2m 18s</td><td class="muted">google 51% · 直接 33%</td><td>29%</td></tr>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3>设备与浏览器分布</h3>
+          <p class="sub">UV 口径 · 当前筛选范围内</p>
+          <div class="row" style="grid-template-columns: 1fr 1fr; gap: 24px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12.5px;"><span>iPhone / Safari</span><span class="muted">38%</span></div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12.5px;"><span>Windows / Chrome 130</span><span class="muted">27%</span></div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12.5px;"><span>macOS / Chrome 130</span><span class="muted">19%</span></div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12.5px;"><span>Android / Chrome 129</span><span class="muted">11%</span></div>
+              <div style="display: flex; justify-content: space-between; font-size: 12.5px;"><span>其他</span><span class="muted">5%</span></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12.5px;"><span>4g</span><span class="muted">51%</span></div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12.5px;"><span>wifi</span><span class="muted">38%</span></div>
+              <div style="display: flex; justify-content: space-between; font-size: 12.5px;"><span>3g / 其他</span><span class="muted">11%</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 静态资源 ============ -->
+      <section class="page" id="page-resources">
+        <div class="page-header">
+          <div>
+            <h1>静态资源</h1>
+            <div class="desc">资源耗时（PerformanceResourceTiming）与加载失败 · 按 script/image/css/media 拆分</div>
+          </div>
+          <div class="actions"><span class="chip">近 24 小时 ▾</span></div>
+        </div>
+        <div class="card" style="margin-bottom: 14px;">
+          <h3>慢资源 TOP</h3>
+          <p class="sub">按 P95 耗时排序</p>
+          <table>
+            <tr><th>资源</th><th>类型</th><th>P50</th><th>P95</th><th>样本数</th><th>缓存命中</th></tr>
+            <tr><td class="msg">/js/vendor.3f2a1c.js</td><td><span class="badge blue">script</span></td><td>380ms</td><td><span style="color: var(--orange);">1.2s</span></td><td>842</td><td class="muted">64%</td></tr>
+            <tr><td class="msg">/images/banner-4k.webp</td><td><span class="badge gray">image</span></td><td>410ms</td><td>980ms</td><td>1,204</td><td class="muted">81%</td></tr>
+            <tr><td class="msg">/fonts/inter-var.woff2</td><td><span class="badge gray">font</span></td><td>120ms</td><td>340ms</td><td>2,010</td><td class="muted">93%</td></tr>
+            <tr><td class="msg">/css/app.8b41e0.css</td><td><span class="badge green">css</span></td><td>44ms</td><td>96ms</td><td>1,840</td><td class="muted">88%</td></tr>
+          </table>
+        </div>
+        <div class="card">
+          <h3>加载失败</h3>
+          <p class="sub">独立 silentResource 开关 · 按错误次数排序</p>
+          <table>
+            <tr><th>资源</th><th>类型</th><th>失败次数</th><th>影响页面</th><th>最近发生</th></tr>
+            <tr><td class="msg">/assets/hero.webp</td><td><span class="badge gray">image</span></td><td><span style="color: var(--red);"><b>5</b></span></td><td class="muted">/（首页）</td><td>11 分钟前</td></tr>
+            <tr><td class="msg">/js/legacy-polyfill.js</td><td><span class="badge blue">script</span></td><td>1</td><td class="muted">/orders</td><td>2 小时前</td></tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 日志查询 ============ -->
+      <section class="page" id="page-logs">
+        <div class="page-header">
+          <div>
+            <h1>日志查询</h1>
+            <div class="desc">客户端 log() 分级日志 · 支持级别/关键词/时间范围过滤</div>
+          </div>
+          <div class="actions"><span class="chip">近 1 小时 ▾</span></div>
+        </div>
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <span class="chip" style="flex: 1;">🔍 关键词：order</span>
+            <span class="tabs"><span class="tab-chip active">全部</span><span class="tab-chip">info</span><span class="tab-chip">warn</span><span class="tab-chip">error</span></span>
+          </div>
+        </div>
+        <div class="card">
+          <table>
+            <tr><th>时间</th><th>级别</th><th>内容</th><th>页面</th><th>会话</th></tr>
+            <tr><td class="dim">10:52:01</td><td><span class="badge red">error</span></td><td class="msg">order submit failed: amount is string</td><td class="muted">/checkout</td><td class="muted">sess-9f2</td></tr>
+            <tr><td class="dim">10:51:58</td><td><span class="badge orange">warn</span></td><td class="msg">order amount rounding: 12.345 → 12.35</td><td class="muted">/checkout</td><td class="muted">sess-9f2</td></tr>
+            <tr><td class="dim">10:51:52</td><td><span class="badge blue">info</span></td><td class="msg">order created: id=ord_8f2k1, plan=pro</td><td class="muted">/checkout</td><td class="muted">sess-9f2</td></tr>
+            <tr><td class="dim">10:48:11</td><td><span class="badge blue">info</span></td><td class="msg">order list cache hit (ttl 60s)</td><td class="muted">/orders</td><td class="muted">sess-1a3</td></tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 事件分析 ============ -->
+      <section class="page" id="page-events">
+        <div class="page-header">
+          <div>
+            <h1>事件分析</h1>
+            <div class="desc">track() 代码埋点 + data-track 声明式埋点 · 多事件对比 / 属性过滤 / 分组下钻</div>
+          </div>
+          <div class="actions"><span class="chip">另存为报表</span></div>
+        </div>
+
+        <!-- 查询构建器 -->
+        <div class="filter-bar">
+          <span class="f-label">指标</span>
+          <span class="f-select">触发次数 ▾</span>
+          <span class="f-label">事件</span>
+          <span class="event-chip">submit_order <span class="x">×</span></span>
+          <span class="event-chip">add_to_cart <span class="x">×</span></span>
+          <span class="event-chip" style="background: var(--card-2); border-color: var(--border); color: var(--muted);">+ 添加事件</span>
+          <span class="f-label">过滤</span>
+          <span class="f-select">plan = "pro" ▾</span>
+          <span class="f-label">分组</span>
+          <span class="f-select">按页面 ▾</span>
+          <span class="grow"></span>
+          <span class="f-select">近 7 天 ▾</span>
+          <span class="f-select">按天 ▾</span>
+          <button class="btn primary">查 询</button>
+        </div>
+
+        <div class="row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">submit_order 次数</div><div class="v">2,104</div><div class="d" style="color: var(--green);">↑ 18%</div></div>
+          <div class="card stat"><div class="k">add_to_cart 次数</div><div class="v">1,820</div><div class="d" style="color: var(--green);">↑ 9%</div></div>
+          <div class="card stat"><div class="k">触发用户数</div><div class="v">1,342</div><div class="d muted">去重 trackerId</div></div>
+          <div class="card stat"><div class="k">人均触发</div><div class="v">2.9</div><div class="d muted">次 / 用户</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline; gap: 12px;">
+            <h3>趋势对比</h3>
+            <span class="sub" style="margin: 0;">按页面分组 · 近 7 天</span>
+            <div class="legend" style="margin: 0 0 0 auto;">
+              <span class="key"><span class="swatch" style="background: #fafafa;"></span>submit_order /checkout</span>
+              <span class="key"><span class="swatch" style="background: var(--blue);"></span>submit_order /orders</span>
+              <span class="key"><span class="swatch" style="background: var(--green);"></span>add_to_cart 全部</span>
+            </div>
+          </div>
+          <svg viewBox="0 0 960 220" width="100%" height="220">
+            <g stroke="#1f1f23"><line x1="0" y1="30" x2="960" y2="30"/><line x1="0" y1="75" x2="960" y2="75"/><line x1="0" y1="120" x2="960" y2="120"/><line x1="0" y1="165" x2="960" y2="165"/></g>
+            <polyline points="0,140 137,132 274,138 411,120 548,126 685,98 822,60 960,44" fill="none" stroke="#fafafa" stroke-width="2"/>
+            <polyline points="0,158 137,154 274,156 411,148 548,150 685,140 822,128 960,120" fill="none" stroke="#60a5fa" stroke-width="2"/>
+            <polyline points="0,150 137,142 274,146 411,130 548,136 685,110 822,84 960,70" fill="none" stroke="#34d399" stroke-width="2" stroke-dasharray="5 4"/>
+            <circle cx="960" cy="44" r="3.5" fill="#fafafa"/>
+            <g fill="#71717a" font-size="11"><text x="0" y="205">10-07</text><text x="240" y="205">10-09</text><text x="540" y="205">10-11</text><text x="920" y="205">10-13</text></g>
+          </svg>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1.4fr 1fr;">
+          <div class="card">
+            <h3>事件明细</h3>
+            <p class="sub">当前过滤与分组下的聚合结果</p>
+            <table>
+              <tr><th>事件</th><th>来源</th><th>次数</th><th>用户数</th><th>人均</th><th></th></tr>
+              <tr class="rowlink" onclick="show('event-detail', document.querySelector('[data-page=events]'))">
+                <td><b>submit_order</b> <span class="badge gray">/checkout</span></td><td><span class="badge blue">声明式</span></td><td><b>1,204</b></td><td>682</td><td>1.8</td><td class="dim">详情 →</td>
+              </tr>
+              <tr class="rowlink" onclick="show('event-detail', document.querySelector('[data-page=events]'))">
+                <td><b>submit_order</b> <span class="badge gray">/orders</span></td><td><span class="badge blue">声明式</span></td><td>900</td><td>540</td><td>1.7</td><td class="dim">详情 →</td>
+              </tr>
+              <tr class="rowlink" onclick="show('event-detail', document.querySelector('[data-page=events]'))">
+                <td><b>add_to_cart</b></td><td><span class="badge gray">代码</span></td><td>1,820</td><td>986</td><td>1.8</td><td class="dim">详情 →</td>
+              </tr>
+            </table>
+          </div>
+          <div class="card">
+            <h3>属性 TOP-N</h3>
+            <p class="sub">submit_order · 属性 plan · 近似聚合</p>
+            <div style="display: flex; flex-direction: column; gap: 11px; font-size: 12.5px;">
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>plan = "pro"</span><span class="muted">54%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 54%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>plan = "team"</span><span class="muted">28%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 28%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>plan = "free"</span><span class="muted">18%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 18%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 事件详情（事件分析的下钻） ============ -->
+      <section class="page" id="page-event-detail">
+        <div class="page-header">
+          <div>
+            <h1 style="display: flex; align-items: center; gap: 10px;">
+              <span class="badge blue">声明式</span>
+              submit_order
+            </h1>
+            <div class="desc">近 7 天 2,104 次 · 682 用户 · 人均 1.8 · 涉及页面 /checkout（54%）、/orders（46%）</div>
+          </div>
+          <div class="actions">
+            <button class="btn" onclick="show('events', document.querySelector('[data-page=events]'))">← 返回事件分析</button>
+            <button class="btn">复制事件名</button>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">触发次数（7d）</div><div class="v">2,104</div><div class="d" style="color: var(--green);">↑ 18%</div></div>
+          <div class="card stat"><div class="k">触发用户</div><div class="v">682</div><div class="d muted">trackerId 去重</div></div>
+          <div class="card stat"><div class="k">人均触发</div><div class="v">1.8</div><div class="d muted">次 / 用户</div></div>
+          <div class="card stat"><div class="k">涉及页面</div><div class="v">2</div><div class="d muted">/checkout · /orders</div></div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1.2fr 1fr; margin-bottom: 14px;">
+          <div class="card">
+            <h3>触发趋势</h3>
+            <p class="sub">近 7 天 · 按天</p>
+            <svg viewBox="0 0 640 180" width="100%" height="180">
+              <g stroke="#1f1f23"><line x1="0" y1="25" x2="640" y2="25"/><line x1="0" y1="70" x2="640" y2="70"/><line x1="0" y1="115" x2="640" y2="115"/><line x1="0" y1="160" x2="640" y2="160"/></g>
+              <path d="M20,120 110,112 200,118 290,96 380,104 470,72 560,44 620,38 620,170 20,170 Z" fill="rgba(250,250,250,0.05)"/>
+              <polyline points="20,120 110,112 200,118 290,96 380,104 470,72 560,44 620,38" fill="none" stroke="#fafafa" stroke-width="2"/>
+              <circle cx="620" cy="38" r="3.5" fill="#fafafa"/>
+            </svg>
+          </div>
+          <div class="card">
+            <h3>页面分布</h3>
+            <p class="sub">该事件的触发页面占比</p>
+            <div style="display: flex; flex-direction: column; gap: 11px; font-size: 12.5px;">
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/checkout</span><span class="muted">54%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 54%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>/orders</span><span class="muted">46%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 46%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+            </div>
+            <div class="kv" style="margin-top: 14px;">
+              <span class="k">首次上报</span><span>2026-10-07 10:21</span>
+              <span class="k">最近上报</span><span>2026-10-13 10:51</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <h3>上报属性分析</h3>
+            <span class="sub" style="margin: 0;">全部属性键的值分布 · 近似聚合</span>
+            <span class="tabs" style="margin-left: auto;">
+              <span class="tab-chip active">plan</span>
+              <span class="tab-chip">itemCount</span>
+              <span class="tab-chip">coupon</span>
+              <span class="tab-chip">payMethod</span>
+            </span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 11px; font-size: 12.5px; max-width: 560px;">
+            <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>plan = "pro"</span><span class="muted">54% · 1,136 次</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 54%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+            <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>plan = "team"</span><span class="muted">28% · 589 次</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 28%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+            <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>plan = "free"</span><span class="muted">18% · 379 次</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 18%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+          </div>
+          <div style="margin-top: 12px; font-size: 12px; color: var(--muted);">属性键缺省时为无属性上报 · 值分布为 Top-N 近似（明细以原始上报为准）</div>
+        </div>
+
+        <div class="card">
+          <div style="display: flex; align-items: baseline;">
+            <h3>最近上报样本</h3>
+            <span class="sub" style="margin: 0 0 0 12px;">原始报文 · 点击行展开完整 JSON</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+            <div style="border: 1px solid var(--border-soft); border-radius: 10px; padding: 12px 14px;">
+              <div style="display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-bottom: 8px;">
+                <span>10:51:58.220</span><span>会话 sess-9f2</span><span>/checkout</span><span>Chrome 130 · macOS</span>
+              </div>
+              <div style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; line-height: 1.7; color: var(--muted); background: var(--card-2); border-radius: 8px; padding: 10px 12px;">
+                {<br />
+                &nbsp;&nbsp;<span style="color: var(--fg);">"behaviorType"</span>: "track", <span style="color: var(--fg);">"name"</span>: "submit_order",<br />
+                &nbsp;&nbsp;<span style="color: var(--fg);">"from"</span>: "declarative",<br />
+                &nbsp;&nbsp;<span style="color: var(--fg);">"props"</span>: { <span style="color: var(--fg);">"plan"</span>: "pro", <span style="color: var(--fg);">"itemCount"</span>: 3, <span style="color: var(--fg);">"coupon"</span>: "SAVE10" }<br />
+                }
+              </div>
+            </div>
+            <div style="border: 1px solid var(--border-soft); border-radius: 10px; padding: 12px 14px;">
+              <div style="display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-bottom: 8px;">
+                <span>10:48:11.021</span><span>会话 sess-1a3</span><span>/checkout</span><span>iPhone · Safari 18</span>
+              </div>
+              <div style="font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; line-height: 1.7; color: var(--muted); background: var(--card-2); border-radius: 8px; padding: 10px 12px;">
+                { <span style="color: var(--fg);">"name"</span>: "submit_order", <span style="color: var(--fg);">"props"</span>: { <span style="color: var(--fg);">"plan"</span>: "team", <span style="color: var(--fg);">"itemCount"</span>: 1 } }
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 转化漏斗 ============ -->
+      <section class="page" id="page-funnel">
+        <div class="page-header">
+          <div>
+            <h1>转化漏斗</h1>
+            <div class="desc">windowFunnel：事件序列 + 窗口期 · 按 trackerId 去重 · 支持分组对比</div>
+          </div>
+          <div class="actions">
+            <button class="btn">另存漏斗</button>
+            <button class="btn primary">查 询</button>
+          </div>
+        </div>
+
+        <!-- 漏斗构建器 -->
+        <div class="filter-bar">
+          <span class="f-label">步骤</span>
+          <span class="event-chip">1 view_product <span class="x">×</span></span>
+          <span class="dim">→</span>
+          <span class="event-chip">2 add_to_cart <span class="x">×</span></span>
+          <span class="dim">→</span>
+          <span class="event-chip">3 submit_order <span class="x">×</span></span>
+          <span class="dim">→</span>
+          <span class="event-chip">4 pay_success <span class="x">×</span></span>
+          <span class="event-chip" style="background: var(--card-2); border-color: var(--border); color: var(--muted);">+ 步骤</span>
+          <span class="f-label">窗口期</span>
+          <span class="f-select">30 分钟 ▾</span>
+          <span class="f-label">分组</span>
+          <span class="f-select">按来源 ▾</span>
+          <span class="grow"></span>
+          <span class="f-select">近 7 天 ▾</span>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline; gap: 12px;">
+            <h3>整体漏斗</h3>
+            <span class="sub" style="margin: 0;">近 7 天 · 全部来源</span>
+            <span style="margin-left: auto;" class="badge green">整体转化 19.8%</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 8px;">
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 5px;"><span><b>1. view_product</b>（浏览商品）</span><span class="muted">3,481 会话 · 100%</span></div>
+              <div style="height: 34px; background: var(--card-2); border-radius: 8px;"><div style="width: 100%; height: 100%; background: rgba(250,250,250,0.85); border-radius: 8px;"></div></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 5px;"><span><b>2. add_to_cart</b></span><span class="muted">1,820 会话 · 52.3% <span style="color: var(--red);">（流失 47.7%）</span></span></div>
+              <div style="height: 34px; background: var(--card-2); border-radius: 8px;"><div style="width: 52%; height: 100%; background: rgba(250,250,250,0.6); border-radius: 8px;"></div></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 5px;"><span><b>3. submit_order</b></span><span class="muted">1,204 会话 · 34.6% <span style="color: var(--red);">（流失 17.7%）</span></span></div>
+              <div style="height: 34px; background: var(--card-2); border-radius: 8px;"><div style="width: 35%; height: 100%; background: rgba(250,250,250,0.4); border-radius: 8px;"></div></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 5px;"><span><b>4. pay_success</b></span><span class="muted">688 会话 · 19.8% <span style="color: var(--red);">（流失 14.8%）</span></span></div>
+              <div style="height: 34px; background: var(--card-2); border-radius: 8px;"><div style="width: 20%; height: 100%; background: var(--green); border-radius: 8px;"></div></div>
+            </div>
+          </div>
+          <div style="margin-top: 14px; padding: 10px 12px; background: var(--card-2); border-radius: 8px; font-size: 12.5px; color: var(--muted);">
+            最大流失在 <span style="color: var(--fg);">第 2→3 步（提交订单，流失 34%）</span>——结合异常分析 <span style="color: var(--fg);">POST /api/orders 500</span> 与 TypeError 突增时段重合，疑似同一根因
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1fr 1fr;">
+          <div class="card">
+            <h3>分组对比：按来源</h3>
+            <p class="sub">整体转化率 · organic vs 直接 vs utm</p>
+            <table>
+              <tr><th>来源</th><th>进入会话</th><th>整体转化</th><th>最大流失步</th></tr>
+              <tr><td>google.com</td><td>1,464</td><td><b>24.1%</b></td><td class="muted">2→3</td></tr>
+              <tr><td>直接访问</td><td>1,080</td><td><b>21.4%</b></td><td class="muted">2→3</td></tr>
+              <tr><td>utm_campaign=launch</td><td>937</td><td><span style="color: var(--orange);"><b>12.8%</b></span></td><td class="muted">1→2</td></tr>
+            </table>
+            <div style="margin-top: 12px; font-size: 12px; color: var(--muted);">launch 活动流量在第 1→2 步流失 87%——活动落地页与商品页衔接需排查</div>
+          </div>
+          <div class="card">
+            <h3>流失去向</h3>
+            <p class="sub">第 2→3 步流失会话的后续行为</p>
+            <div style="display: flex; flex-direction: column; gap: 11px; font-size: 12.5px;">
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>离开站点</span><span class="muted">46%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 46%; height: 100%; background: var(--red); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>遇到报错（orders 500）</span><span class="muted">28%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 28%; height: 100%; background: var(--orange); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>返回商品页比价</span><span class="muted">17%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 17%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+              <div><div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>其他</span><span class="muted">9%</span></div><div style="height: 6px; background: var(--border-soft); border-radius: 4px;"><div style="width: 9%; height: 100%; background: var(--fg); border-radius: 4px;"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 用户留存 ============ -->
+      <section class="page" id="page-retention">
+        <div class="page-header">
+          <div>
+            <h1>用户留存</h1>
+            <div class="desc">retention() 按 trackerId 跨会话 · 初始事件与回访条件可定义</div>
+          </div>
+          <div class="actions">
+            <span class="f-select">初始事件：首次访问 ▾</span>
+            <span class="f-select">回访：任意行为 ▾</span>
+            <span class="f-select">近 7 天 ▾</span>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">次日留存（D1）</div><div class="v">48%</div><div class="d" style="color: var(--green);">↑ 3pp vs 上周期</div></div>
+          <div class="card stat"><div class="k">7 日留存</div><div class="v">12%</div><div class="d" style="color: var(--green);">↑ 2pp</div></div>
+          <div class="card stat"><div class="k">新用户（周期内）</div><div class="v">3,094</div><div class="d muted">首访去重</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline; gap: 12px;">
+            <h3>留存率趋势</h3>
+            <span class="sub" style="margin: 0;">按首访周分组 · D1/D7 留存走势</span>
+            <div class="legend" style="margin: 0 0 0 auto;">
+              <span class="key"><span class="swatch" style="background: var(--green);"></span>D1 留存率</span>
+              <span class="key"><span class="swatch" style="background: var(--blue);"></span>D7 留存率</span>
+            </div>
+          </div>
+          <svg viewBox="0 0 960 160" width="100%" height="160">
+            <g stroke="#1f1f23"><line x1="0" y1="20" x2="960" y2="20"/><line x1="0" y1="60" x2="960" y2="60"/><line x1="0" y1="100" x2="960" y2="100"/><line x1="0" y1="140" x2="960" y2="140"/></g>
+            <polyline points="40,60 240,54 440,48 640,44 840,38" fill="none" stroke="#34d399" stroke-width="2"/>
+            <polyline points="40,120 240,114 440,108 640,104 840,96" fill="none" stroke="#60a5fa" stroke-width="2"/>
+            <circle cx="840" cy="38" r="3.5" fill="#34d399"/><circle cx="840" cy="96" r="3.5" fill="#60a5fa"/>
+            <g fill="#71717a" font-size="11"><text x="26" y="158">W1</text><text x="226" y="158">W2</text><text x="426" y="158">W3</text><text x="626" y="158">W4</text><text x="826" y="158">本周</text></g>
+          </svg>
+        </div>
+
+        <div class="card">
+          <h3>N 日留存矩阵</h3>
+          <p class="sub">首访日 → 后续各日回访占比 · 颜色越亮留存越高</p>
+          <table style="text-align: center;">
+            <tr><th style="text-align: left;">首访日</th><th>规模</th><th>D+1</th><th>D+2</th><th>D+3</th><th>D+4</th><th>D+5</th><th>D+6</th></tr>
+            <tr><td style="text-align: left;">10-07</td><td>412</td><td style="background: rgba(52,211,153,0.35);">41%</td><td style="background: rgba(52,211,153,0.22);">28%</td><td style="background: rgba(52,211,153,0.16);">21%</td><td style="background: rgba(52,211,153,0.1);">16%</td><td style="background: rgba(52,211,153,0.08);">12%</td><td style="background: rgba(52,211,153,0.06);">9%</td></tr>
+            <tr><td style="text-align: left;">10-08</td><td>468</td><td style="background: rgba(52,211,153,0.4);">44%</td><td style="background: rgba(52,211,153,0.24);">30%</td><td style="background: rgba(52,211,153,0.14);">18%</td><td style="background: rgba(52,211,153,0.1);">15%</td><td style="background: rgba(52,211,153,0.08);">11%</td><td class="dim">—</td></tr>
+            <tr><td style="text-align: left;">10-09</td><td>521</td><td style="background: rgba(52,211,153,0.45);">48%</td><td style="background: rgba(52,211,153,0.28);">32%</td><td style="background: rgba(52,211,153,0.18);">22%</td><td style="background: rgba(52,211,153,0.12);">17%</td><td class="dim">—</td><td class="dim">—</td></tr>
+            <tr><td style="text-align: left;">10-10</td><td>489</td><td style="background: rgba(52,211,153,0.42);">43%</td><td style="background: rgba(52,211,153,0.26);">29%</td><td style="background: rgba(52,211,153,0.16);">20%</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td></tr>
+            <tr><td style="text-align: left;">10-11</td><td>584</td><td style="background: rgba(52,211,153,0.5);">52%</td><td style="background: rgba(52,211,153,0.3);">34%</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td></tr>
+            <tr><td style="text-align: left;">10-12</td><td>620</td><td style="background: rgba(52,211,153,0.48);">49%</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td></tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 曝光分析 ============ -->
+      <section class="page" id="page-exposure">
+        <div class="page-header">
+          <div>
+            <h1>曝光分析</h1>
+            <div class="desc">data-expose 曝光 · 进入视口停留 ≥500ms · 同 selector 1s 节流 · 每 view 去重</div>
+          </div>
+          <div class="actions">
+            <span class="f-select">曝光位：全部 ▾</span>
+            <span class="f-select">近 7 天 ▾</span>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">曝光总数</div><div class="v">7,883</div><div class="d" style="color: var(--green);">↑ 11%</div></div>
+          <div class="card stat"><div class="k">有效曝光率</div><div class="v">86%</div><div class="d muted">停留 ≥500ms 口径</div></div>
+          <div class="card stat"><div class="k">曝光→点击转化</div><div class="v">8.7%</div><div class="d muted">611 次后续点击</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline; gap: 12px;">
+            <h3>曝光趋势</h3>
+            <span class="sub" style="margin: 0;">近 7 天 · 按曝光位</span>
+            <div class="legend" style="margin: 0 0 0 auto;">
+              <span class="key"><span class="swatch" style="background: #fafafa;"></span>home-banner</span>
+              <span class="key"><span class="swatch" style="background: var(--blue);"></span>coupon-entry</span>
+              <span class="key"><span class="swatch" style="background: var(--green);"></span>pro-upgrade</span>
+            </div>
+          </div>
+          <svg viewBox="0 0 960 180" width="100%" height="180">
+            <g stroke="#1f1f23"><line x1="0" y1="25" x2="960" y2="25"/><line x1="0" y1="70" x2="960" y2="70"/><line x1="0" y1="115" x2="960" y2="115"/><line x1="0" y1="160" x2="960" y2="160"/></g>
+            <polyline points="0,60 137,54 274,64 411,48 548,58 685,40 822,30 960,36" fill="none" stroke="#fafafa" stroke-width="2"/>
+            <polyline points="0,110 137,104 274,112 411,96 548,104 685,88 822,80 960,84" fill="none" stroke="#60a5fa" stroke-width="2"/>
+            <polyline points="0,140 137,136 274,140 411,130 548,136 685,124 822,120 960,124" fill="none" stroke="#34d399" stroke-width="2"/>
+          </svg>
+        </div>
+
+        <div class="card">
+          <h3>曝光排名</h3>
+          <p class="sub">按曝光次数 · 点击转化为曝光后 5s 内的后续点击</p>
+          <table>
+            <tr><th>曝光位</th><th>页面</th><th>曝光次数</th><th>平均停留</th><th>点击转化</th></tr>
+            <tr><td><b>home-banner</b></td><td class="muted">/</td><td><b>4,201</b></td><td>1.8s</td><td>6.2%（261 次点击）</td></tr>
+            <tr><td><b>coupon-entry</b></td><td class="muted">/products/*</td><td>2,840</td><td>1.1s</td><td><span style="color: var(--green);">11.4%</span>（324 次）</td></tr>
+            <tr><td><b>pro-upgrade</b></td><td class="muted">/settings</td><td>842</td><td>0.9s</td><td>3.1%（26 次）</td></tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ Source Map ============ -->
+      <section class="page" id="page-sourcemaps">
+        <div class="page-header">
+          <div>
+            <h1>Source Map</h1>
+            <div class="desc">构建后 CLI 上传（release + URL 精确/后缀匹配）· 错误堆栈据此符号化</div>
+          </div>
+          <div class="actions">
+            <button class="btn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13"/><path d="m16 6-4-4-4 4"/><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/></svg>
+              CLI 命令
+            </button>
+            <button class="btn primary">上传工件</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>工件列表</h3>
+          <p class="sub">当前项目 · 按上传时间排序</p>
+          <table>
+            <tr><th>Release</th><th>匹配 URL</th><th>文件大小</th><th>上传时间</th><th>状态</th></tr>
+            <tr><td><b>v2.3.1</b></td><td class="msg">app.js</td><td>1.2 MB</td><td>2026-10-13 09:20</td><td><span class="badge green">生效中</span></td></tr>
+            <tr><td><b>v2.3.1</b></td><td class="msg">vendor.js</td><td>2.8 MB</td><td>2026-10-13 09:20</td><td><span class="badge green">生效中</span></td></tr>
+            <tr><td>v2.3.0</td><td class="msg">app.js</td><td>1.1 MB</td><td>2026-10-06 18:40</td><td><span class="badge gray">已过期（TTL）</span></td></tr>
+          </table>
+          <div style="margin-top: 14px; padding: 12px 14px; background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted);">
+            <span style="color: var(--dim);"># CI 构建后步骤（管理密钥走 x-api-key）</span><br />
+            npx sourcemap-cli upload --dsn http://localhost:3100 \ <br />
+            &nbsp;&nbsp;--release v2.3.1 --url app.js --secret <span style="color: var(--orange);">$NIGHTOWL_PROJECT_SECRET</span> ./dist/app.js.map
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 应用与密钥 ============ -->
+      <section class="page" id="page-appkeys">
+        <div class="page-header">
+          <div>
+            <h1>应用与密钥</h1>
+            <div class="desc">双密钥模型：上报 key 公开可见（嵌在宿主页面）· 管理密钥仅服务端/CI 持有</div>
+          </div>
+          <div class="actions"><button class="btn primary">重置管理密钥</button></div>
+        </div>
+        <div class="row" style="grid-template-columns: 1fr 1fr;">
+          <div class="card">
+            <h3>上报密钥（public_key）</h3>
+            <p class="sub">SDK init 的 apikey · 公开标识，泄露无管理风险</p>
+            <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 13px;">
+              pk-demo-store-7f3k
+              <span class="badge gray" style="margin-left: auto;">复制</span>
+            </div>
+            <div class="kv" style="margin-top: 16px;">
+              <span class="k">应用名称</span><span>demo-store</span>
+              <span class="k">限流阈值</span><span>1000 信封 / 分钟</span>
+              <span class="k">创建时间</span><span>2026-09-28</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>管理密钥（secret_key）</h3>
+            <p class="sub">SourceMap CLI / API 调用 · 仅哈希落库，重置后旧密钥立即失效</p>
+            <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--card-2); border: 1px solid rgba(248,113,113,0.25); border-radius: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--muted);">
+              sk-demo-••••••••••••（已隐藏）
+            </div>
+            <div class="kv" style="margin-top: 16px;">
+              <span class="k">最近使用</span><span>2026-10-13 09:20（sourcemap-cli）</span>
+              <span class="k">轮换策略</span><span>手动重置（M8 支持定期轮换提醒）</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 通知渠道 ============ -->
+      <section class="page" id="page-channels">
+        <div class="page-header">
+          <div>
+            <h1>通知渠道</h1>
+            <div class="desc">告警 webhook 之外的投递渠道：钉钉 / 企微 / Slack / 邮件</div>
+          </div>
+          <div class="actions"><button class="btn primary">+ 添加渠道</button></div>
+        </div>
+        <div class="row" style="grid-template-columns: repeat(3, 1fr);">
+          <div class="card">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+              <span class="badge blue">钉钉</span><span class="badge green">已启用</span>
+            </div>
+            <div class="kv">
+              <span class="k">类型</span><span>webhook 机器人</span>
+              <span class="k">消息格式</span><span>Markdown 卡片</span>
+              <span class="k">@ 指定人</span><span>@所有人（error_spike）</span>
+            </div>
+          </div>
+          <div class="card">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+              <span class="badge gray">Slack</span><span class="badge gray">未启用</span>
+            </div>
+            <div class="kv">
+              <span class="k">类型</span><span>Incoming Webhook</span>
+              <span class="k">目标频道</span><span>#frontend-alerts</span>
+            </div>
+          </div>
+          <div class="card">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+              <span class="badge gray">邮件</span><span class="badge gray">未启用</span>
+            </div>
+            <div class="kv">
+              <span class="k">类型</span><span>SMTP</span>
+              <span class="k">收件组</span><span>fe-oncall@example.com</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 成员与权限 ============ -->
+      <section class="page" id="page-members">
+        <div class="page-header">
+          <div>
+            <h1>成员与权限</h1>
+            <div class="desc">多成员协作与 RBAC 角色管理</div>
+          </div>
+          <div class="actions"><button class="btn primary">+ 邀请成员</button></div>
+        </div>
+        <div class="card">
+          <table>
+            <tr><th>成员</th><th>角色</th><th>加入时间</th><th>最近登录</th></tr>
+            <tr><td><b>admin</b></td><td><span class="badge blue">owner</span></td><td>2026-09-28</td><td>今天</td></tr>
+            <tr><td><b>fe-dev-01</b> <span class="dim">（邀请中）</span></td><td><span class="badge gray">member</span></td><td>—</td><td>—</td></tr>
+          </table>
+          <div style="margin-top: 14px; padding: 10px 12px; background: var(--card-2); border-radius: 8px; font-size: 12.5px; color: var(--muted);">
+            角色说明：owner（全部权限）· admin（除成员管理外）· member（只读 + 告警规则）
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ AI 诊断报告（错误详情的下钻，独立成果物页） ============ -->
+      <section class="page" id="page-ai-report">
+        <div class="page-header">
+          <div>
+            <h1 style="display: flex; align-items: center; gap: 10px;">
+              <span class="badge blue">AI 诊断报告</span>
+              <span style="font-family: ui-monospace, Menlo, monospace; font-size: 16px;">fingerprint 1270921b</span>
+            </h1>
+            <div class="desc">TypeError: amount.toFixed is not a function · release v2.3.1 · 诊断于 10 分钟前</div>
+          </div>
+          <div class="actions">
+            <button class="btn" onclick="show('error-detail', document.querySelector('[data-page=errors]'))">← 返回错误详情</button>
+            <button class="btn">重新诊断</button>
+            <button class="btn primary">复制报告</button>
+          </div>
+        </div>
+
+        <!-- 报告元信息 -->
+        <div class="row" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 14px;">
+          <div class="card stat"><div class="k">置信度</div><div class="v" style="color: var(--green);">87%</div><div class="d muted">输出经 zod 校验</div></div>
+          <div class="card stat"><div class="k">模型 / 耗时</div><div class="v" style="font-size: 18px;">gpt-4o · 12.4s</div><div class="d muted">缓存命中</div></div>
+          <div class="card stat"><div class="k">错误规模</div><div class="v">26 次 / 18 人</div><div class="d muted">近 24h 该指纹</div></div>
+          <div class="card stat"><div class="k">证据快照</div><div class="v">3 / 3</div><div class="d muted">事件 TTL 过期后仍可核对</div></div>
+        </div>
+
+        <!-- 根因 -->
+        <div class="card" style="margin-bottom: 14px;">
+          <h3>根因分析</h3>
+          <div style="font-size: 14px; line-height: 1.7; margin-top: 8px;">
+            <b>formatAmount</b> 未做类型收窄——用户切换套餐后价格字段从 number 变为 <b>string</b>（v2.3.0 起 /api/products 返回分单位字符串），<b>money.ts:87</b> 直接调用 toFixed 抛出 TypeError。
+          </div>
+          <div style="margin-top: 10px; font-size: 12px; color: var(--muted);">影响面：62% 的错误集中于 /checkout 提交动作；与 AJAX 500、接口 500 同源</div>
+        </div>
+
+        <!-- 修复建议 -->
+        <div class="card" style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: baseline;">
+            <h3>修复建议</h3>
+            <span class="sub" style="margin: 0 0 0 12px;">可直接套用 · 建议同步修改接口序列化</span>
+          </div>
+          <div style="position: relative; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.8; background: var(--card-2); border-radius: 8px; padding: 12px 14px; color: var(--muted);">
+            <span style="color: var(--dim);">src/order/money.ts:87</span><br />
+            <span style="color: var(--red);">- return amount.toFixed(2)</span><br />
+            <span style="color: var(--green);">+ return Number(amount).toFixed(2)</span><br />
+            <span style="color: var(--dim);">// 建议同步在 /api/products 响应层将 price 统一序列化为 number</span>
+            <button class="btn" style="position: absolute; top: 10px; right: 10px; height: 26px; padding: 0 10px; font-size: 11.5px;">复制片段</button>
+          </div>
+        </div>
+
+        <!-- 证据链 -->
+        <div class="card" style="margin-bottom: 14px;">
+          <h3>证据链</h3>
+          <p class="sub">每条结论可回溯核对 · 已快照（事件 TTL 过期后仍可查看）</p>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div class="rowlink" style="display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: var(--card-2); border-radius: 8px; font-size: 12.5px; cursor: pointer;" onclick="show('error-detail', document.querySelector('[data-page=errors]'))">
+              <span class="badge gray">堆栈帧 ②</span>
+              <span class="muted">money.ts:87:21 —— toFixed 调用点，与报告一致</span>
+              <span class="dim" style="margin-left: auto;">跳转错误详情 →</span>
+            </div>
+            <div class="rowlink" style="display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: var(--card-2); border-radius: 8px; font-size: 12.5px; cursor: pointer;" onclick="show('error-detail', document.querySelector('[data-page=errors]'))">
+              <span class="badge gray">面包屑 ④</span>
+              <span class="muted">用户点击「切换套餐 pro」后 12ms 触发提交——类型变化的触发时机</span>
+              <span class="dim" style="margin-left: auto;">跳转错误详情 →</span>
+            </div>
+            <div class="rowlink" style="display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: var(--card-2); border-radius: 8px; font-size: 12.5px; cursor: pointer;" onclick="show('api-detail', document.querySelector('[data-page=api]'))">
+              <span class="badge gray">接口 ③</span>
+              <span class="muted">POST /api/orders → 500，响应体即本错误的 message</span>
+              <span class="dim" style="margin-left: auto;">跳转接口详情 →</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 历史诊断 -->
+        <div class="card">
+          <h3>历史诊断</h3>
+          <p class="sub">同指纹的诊断记录 · 模型迭代后可重新诊断对比</p>
+          <table>
+            <tr><th>时间</th><th>模型</th><th>置信度</th><th>根因摘要</th><th></th></tr>
+            <tr><td class="dim">10 分钟前</td><td>gpt-4o</td><td><b>87%</b></td><td class="muted">formatAmount 类型未收窄</td><td><span class="badge green">当前</span></td></tr>
+            <tr><td class="dim">2 小时前</td><td>gpt-4o-mini</td><td>72%</td><td class="muted">疑似类型错误（压缩堆栈，无 sourcemap）</td><td><span class="badge gray" style="cursor: pointer;">查看</span></td></tr>
+          </table>
+          <div style="margin-top: 12px; font-size: 12px; color: var(--muted);">历史对比清晰呈现 sourcemap 符号化对诊断质量的提升——作品集演示的高光素材</div>
+        </div>
+      </section>
+
+      <!-- ============ AI 诊断配置 ============ -->
+      <section class="page" id="page-ai">
+        <div class="page-header">
+          <div>
+            <h1>AI 诊断配置</h1>
+            <div class="desc">诊断动作在错误详情页内触发（仅适用分类显示按钮）；本页管 provider、适用范围与用量（ADR-9：只建议不执行）</div>
+          </div>
+          <div class="actions"><span class="badge green">provider 已配置</span></div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1fr 1fr; margin-bottom: 14px;">
+          <div class="card">
+            <h3>Provider（表单可配，存 PG settings）</h3>
+            <p class="sub">env 变量作为初始默认值；apiKey 只写不读（回显脱敏）</p>
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px;">
+              <div>
+                <div style="font-size: 12px; color: var(--dim); margin-bottom: 5px;">Base URL</div>
+                <input value="https://api.openai.com/v1" style="width: 100%; height: 36px; padding: 0 12px; background: var(--card-2); border: 1px solid var(--border); border-radius: 8px; color: var(--fg); font-size: 13px; outline: none;" />
+              </div>
+              <div>
+                <div style="font-size: 12px; color: var(--dim); margin-bottom: 5px;">模型名称</div>
+                <input value="gpt-4o" style="width: 100%; height: 36px; padding: 0 12px; background: var(--card-2); border: 1px solid var(--border); border-radius: 8px; color: var(--fg); font-size: 13px; outline: none;" />
+              </div>
+              <div>
+                <div style="font-size: 12px; color: var(--dim); margin-bottom: 5px;">API Key <span style="color: var(--green);">已配置 · 留空表示不修改</span></div>
+                <input type="password" placeholder="••••••••••••" style="width: 100%; height: 36px; padding: 0 12px; background: var(--card-2); border: 1px solid var(--border); border-radius: 8px; color: var(--fg); font-size: 13px; outline: none;" />
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <button class="btn primary">保存配置</button>
+                <button class="btn">测试连通（发送 ping）</button>
+              </div>
+              <div style="font-size: 11.5px; color: var(--dim);">未配置 apiKey 时：诊断接口 501 明确降级，错误详情不显示诊断入口，其他功能不受影响</div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>适用范围（按错误分类）</h3>
+            <p class="sub">只对勾选分类显示「AI 诊断」按钮 · 依据是 AI 推理素材的充分性</p>
+            <div style="display: flex; flex-direction: column; gap: 9px; margin-top: 8px; font-size: 13px;">
+              <div style="display: flex; gap: 10px; align-items: flex-start;">
+                <span class="switch on"></span>
+                <div><b>JS 运行时错误</b><div class="dim" style="font-size: 11.5px;">符号化堆栈 + 面包屑 + 请求上下文，推理素材最充分</div></div>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: flex-start;">
+                <span class="switch on"></span>
+                <div><b>Promise 拒绝</b><div class="dim" style="font-size: 11.5px;">与 JS 错误同构</div></div>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: flex-start;">
+                <span class="switch on"></span>
+                <div><b>AJAX 请求异常</b><div class="dim" style="font-size: 11.5px;">请求/响应采样 + traceId，可推后端假设</div></div>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: flex-start;">
+                <span class="switch" style="background: #3f3f46;"></span>
+                <div><b>资源加载失败</b><div class="dim" style="font-size: 11.5px;">根因通常显而易见（路径/产物），AI 增值低</div></div>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: flex-start;">
+                <span class="switch" style="background: #3f3f46;"></span>
+                <div><b>白屏</b><div class="dim" style="font-size: 11.5px;">16 点采样上下文过少，易跑偏</div></div>
+              </div>
+              <div style="display: flex; gap: 10px; align-items: flex-start; opacity: 0.5;">
+                <span class="switch" style="background: #27272a; cursor: not-allowed;"></span>
+                <div><b>自定义上报</b><div class="dim" style="font-size: 11.5px;">业务自定义语义，无 ground truth —— 不可参与</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns: 1fr 1fr;">
+          <div class="card">
+            <h3>本周用量</h3>
+            <p class="sub">按管理身份限流</p>
+            <div class="kv">
+              <span class="k">诊断次数</span><span>14 次（3 个指纹）</span>
+              <span class="k">缓存命中</span><span>6 次（同指纹+堆栈 hash）</span>
+              <span class="k">失败 / 拒绝</span><span>0 / 0</span>
+              <span class="k">证据快照</span><span>14 / 14 已落库</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>边界声明</h3>
+            <p class="sub">写进实现与提示词，不随配置变化</p>
+            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--muted); line-height: 1.6;">
+              <div>· 只生成建议，<b style="color: var(--fg);">不读仓库、不写代码、不建 PR</b>——修复由人执行后人工勾销</div>
+              <div>· 每条结论必须带<b style="color: var(--fg);">证据引用</b>（堆栈帧/面包屑/接口），人工可核对</div>
+              <div>· 错误消息/面包屑等宿主可控内容只进 prompt 数据段，与 system 段隔离（防注入）</div>
+              <div>· 输出 JSON 经 zod schema 校验（进契约测试）；诊断结果归 Postgres（ADR-9 演进：apiKey 由 env-only 改为表单只写不读）</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>    </div>    </div>
+  </div>
+</div>
+
+<script>
+  function show(page, el) {
+    document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
+    const target = document.getElementById('page-' + page);
+    if (target) target.classList.add('active');
+    document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
+    const nav = document.querySelector('.nav-item[data-page="' + page + '"]');
+    if (nav) nav.classList.add('active');
+    window.scrollTo(0, 0);
+  }
+  function showPlaceholder(title, desc, milestone, el) {
+    document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
+    document.getElementById('page-placeholder').classList.add('active');
+    document.getElementById('ph-title').textContent = title;
+    document.getElementById('ph-desc').textContent = desc + ' —— 该能力在路线图中，尚未实现';
+    document.getElementById('ph-milestone').textContent = milestone;
+    document.getElementById('ph-note').textContent = milestone + ' ';
+    document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
+    if (el) el.classList.add('active');
+    window.scrollTo(0, 0);
+  }
+  function toggleGroup(titleEl) {
+    const children = titleEl.nextElementSibling;
+    children.style.display = children.style.display === 'none' ? '' : 'none';
+    const chev = titleEl.querySelector('.chev');
+    if (chev) chev.style.transform = children.style.display === 'none' ? 'rotate(-90deg)' : '';
+  }
+  function logoutHint() {
+    alert('原型演示：登出回到登录页（登录页见 login-v1.html）');
+  }
+</script>
+</body>
+</html>
