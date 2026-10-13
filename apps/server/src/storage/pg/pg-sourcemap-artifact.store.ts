@@ -23,6 +23,23 @@ export class PgSourcemapArtifactStore implements ISourcemapArtifactStore {
     return Number(r.rows[0]?.n ?? 0)
   }
 
+  async listAll(apikey: string): Promise<SourcemapArtifact[]> {
+    const r = await this.pool.query(
+      `SELECT a.release, a.url, a.map_json, a.uploaded_at
+       FROM sourcemap_artifacts a JOIN projects p ON p.id = a.project_id
+       WHERE p.public_key = $1
+       ORDER BY a.uploaded_at DESC`,
+      [apikey]
+    )
+    return r.rows.map((row) => ({
+      apikey,
+      release: row.release,
+      url: row.url,
+      mapJson: row.map_json,
+      uploadedAt: new Date(row.uploaded_at).getTime(),
+    }))
+  }
+
   async listByRelease(apikey: string, release: string): Promise<SourcemapArtifact[]> {
     const r = await this.pool.query(
       `SELECT a.url, a.map_json, a.uploaded_at

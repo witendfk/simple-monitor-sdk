@@ -76,6 +76,15 @@ export function ErrorsView({ onOpen }: { onOpen: (fingerprint: string) => void }
                 <td>{g.affectedSessions}</td>
                 <td>
                   {g.isNewInRelease === true && <span className="badge badge-new">新错误</span>}
+                  {g.status === 'resolved' && (
+                    <span
+                      className="badge"
+                      style={{ background: 'var(--green-tint)', color: 'var(--green)' }}
+                    >
+                      已解决
+                    </span>
+                  )}
+                  {g.status === 'ignored' && <span className="badge gray">已忽略</span>}
                   <span className="muted">{g.releases.join(', ') || '—'}</span>
                 </td>
                 <td className="muted">{new Date(g.lastSeen).toLocaleString()}</td>

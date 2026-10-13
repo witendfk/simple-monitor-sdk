@@ -50,6 +50,8 @@ export interface ErrorGroup {
   releases: string[]
   firstSeenRelease?: string
   isNewInRelease?: boolean
+  /** 状态机（P5b）：PG issues 透出；未知指纹视为 open */
+  status?: 'open' | 'resolved' | 'ignored'
 }
 
 export interface Overview {
@@ -60,6 +62,25 @@ export interface Overview {
   perfCount: number
   sessionCount: number
   topErrors: Array<{ fingerprint: string; type: string; message: string; count: number }>
+  health: {
+    score: number
+    tone: 'healthy' | 'watch' | 'poor'
+    deductions: Array<{ domain: string; why: string; pts: number }>
+  }
+}
+
+export interface TrendBucket {
+  hour: string
+  count: number
+}
+
+export interface PagePerf {
+  page: string
+  samples: number
+  lcpP75: number | null
+  clsP75: number | null
+  inpP75: number | null
+  fcpP75: number | null
 }
 
 export interface PerfQuantiles {
@@ -163,8 +184,29 @@ export const alertApi = {
   fires: (limit = 50) => getJson<AlertFire[]>(`/alert-fires?limit=${limit}`),
 }
 
+export const errorsApi = {
+  /** 状态流转（P5b 状态机） */
+  setStatus: async (
+    fingerprint: string,
+    status: 'open' | 'resolved' | 'ignored'
+  ): Promise<void> => {
+    const res = await fetch(`${BASE}/errors/${fingerprint}/status`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    })
+    handleAuth(res)
+    if (!res.ok) throw new Error(`setStatus failed: ${res.status}`)
+  },
+  trend: (hours = 24) =>
+    getJson<{ hours: number; buckets: TrendBucket[] }>(`/errors/trend?hours=${hours}`),
+}
+
 export const api = {
   overview: (sinceMinutes: number) => getJson<Overview>(`/overview?sinceMinutes=${sinceMinutes}`),
+  performanceByPage: (sinceMinutes: number) =>
+    getJson<PagePerf[]>(`/performance/by-page?sinceMinutes=${sinceMinutes}`),
   errors: (limit = 50, release?: string) =>
     getJson<ErrorGroup[]>(
       `/errors?limit=${limit}${release ? `&release=${encodeURIComponent(release)}` : ''}`

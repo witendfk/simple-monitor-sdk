@@ -111,6 +111,11 @@ body {
 .content { padding: 24px 28px 48px; }
 
 /* ===== 通用组件（暗色） ===== */
+.deduct-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border: 1px solid var(--border-soft); border-radius: 9px;
+  margin-top: 8px; font-size: 13px;
+}
 .card {
   background: var(--card); border: 1px solid var(--border-soft);
   border-radius: 12px; padding: 18px 20px;

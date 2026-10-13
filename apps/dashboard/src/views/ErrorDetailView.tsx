@@ -2,7 +2,7 @@
  * 错误详情：符号化堆栈（原始源码位置高亮）+ 面包屑时间线
  */
 import { useEffect, useState } from 'react'
-import { api, type ErrorDetail } from '../api'
+import { api, errorsApi, type ErrorDetail } from '../api'
 
 export function ErrorDetailView({
   fingerprint,
@@ -12,6 +12,13 @@ export function ErrorDetailView({
   onBack: () => void
 }) {
   const [detail, setDetail] = useState<ErrorDetail | null>(null)
+  const [statusNote, setStatusNote] = useState('')
+  const setStatus = (status: 'resolved' | 'ignored'): void => {
+    errorsApi
+      .setStatus(fingerprint, status)
+      .then(() => setStatusNote(`已标记${status === 'resolved' ? '已解决' : '已忽略'}`))
+      .catch(() => setStatusNote('标记失败（PG 未接线或会话过期）'))
+  }
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -29,6 +36,17 @@ export function ErrorDetailView({
       <button className="button" onClick={onBack}>
         ← 返回列表
       </button>
+      <button className="button" onClick={() => setStatus('resolved')}>
+        标记已解决
+      </button>
+      <button className="button" onClick={() => setStatus('ignored')}>
+        忽略
+      </button>
+      {statusNote && (
+        <span className="muted" style={{ marginLeft: 10, fontSize: 12.5 }}>
+          {statusNote}
+        </span>
+      )}
       <h3>
         <code>{detail.type}</code>
         {detail.error?.componentName && (

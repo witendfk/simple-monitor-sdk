@@ -18,8 +18,14 @@ export interface IssueUpsert {
   release?: string
 }
 
+export type IssueStatus = 'open' | 'resolved' | 'ignored'
+
 export interface IIssueStore {
   upsertIssues(apikey: string, issues: IssueUpsert[]): Promise<void>
+  /** 状态流转（幂等）：不存在的指纹静默跳过 */
+  setStatus(apikey: string, fingerprint: string, status: IssueStatus): Promise<void>
+  /** 批量取状态（错误列表透出用；未知指纹不在返回中） */
+  getStatuses(apikey: string, fingerprints: string[]): Promise<Map<string, IssueStatus>>
   /** 从事件事实源对账计数（覆写语义，非增量） */
   reconcileCounts(
     apikey: string,
@@ -29,7 +35,7 @@ export interface IIssueStore {
 
 export interface IssueRow {
   fingerprint: string
-  status: 'open' | 'resolved' | 'ignored'
+  status: IssueStatus
   firstSeen: string
   lastSeen: string
   firstRelease?: string
@@ -61,6 +67,20 @@ export class MemoryIssueStore implements IIssueStore {
         existing.lastSeen > it.ts.toISOString() ? existing.lastSeen : it.ts.toISOString()
       existing.firstRelease = existing.firstRelease ?? it.release
     }
+  }
+
+  async setStatus(apikey: string, fingerprint: string, status: IssueStatus): Promise<void> {
+    const row = this.issues.get(`${apikey}|${fingerprint}`)
+    if (row) row.status = status
+  }
+
+  async getStatuses(apikey: string, fingerprints: string[]): Promise<Map<string, IssueStatus>> {
+    const out = new Map<string, IssueStatus>()
+    for (const fp of fingerprints) {
+      const row = this.issues.get(`${apikey}|${fp}`)
+      if (row) out.set(fp, row.status)
+    }
+    return out
   }
 
   async reconcileCounts(

@@ -54,6 +54,8 @@ function stubStorage(errorCount: number): IEventStorage {
     performanceQuantiles: async () => ({ metric: 'x', count: 1, p50: 100, p75: 100, p95: 100 }),
     recentBehaviors: async () => [],
     errorCountsByFingerprint: async () => new Map(),
+    errorTrend: async () => [],
+    performanceByPage: async () => [],
   }
 }
 

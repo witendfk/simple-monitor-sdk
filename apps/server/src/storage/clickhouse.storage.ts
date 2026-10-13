@@ -11,7 +11,7 @@ import { createClient, type ClickHouseClient } from '@clickhouse/client'
 import { toClickHouseDateTime } from './clickhouse-datetime'
 import type { NormalizedEvent } from '../ingest/normalize'
 import type { ErrorGroup, IEventStorage, OverviewStats, PerfQuantiles } from './event-storage'
-import { behaviorDetailFields } from './event-storage'
+import { behaviorDetailFields, type PagePerf, type TrendBucket } from './event-storage'
 
 /** 错误行（error_events 表，列名 snake_case） */
 interface ErrorRow extends HeadRow {
@@ -414,6 +414,57 @@ export class ClickHouseStorage implements IEventStorage, OnApplicationShutdown {
         activeMs: Number(r.dwell_ms) > 0 ? Number(r.dwell_ms) : undefined,
         from: r.from_source,
       }),
+    }))
+  }
+
+  /** 错误趋势：小时桶（零桶不补——前端补零；与 Memory 实现的窗口语义一致由调用方约定） */
+  async errorTrend(apikey: string, hours: number): Promise<TrendBucket[]> {
+    const since = toClickHouseDateTime(new Date(Date.now() - hours * 3600_000))
+    const rs = await this.client.query({
+      query: `SELECT toStartOfHour(ts) AS hour, count() AS n
+              FROM error_events
+              WHERE apikey = {apikey:String} AND ts >= {since:DateTime}
+              GROUP BY hour ORDER BY hour`,
+      query_params: { apikey, since },
+      format: 'JSONEachRow',
+    })
+    const rows = (await rs.json()) as Array<{ hour: string; n: string }>
+    // 零填充完整窗口（与 Memory 现算语义一致）
+    const byHour = new Map(rows.map((r) => [r.hour, Number(r.n)]))
+    const out: TrendBucket[] = []
+    const start = Date.now() - hours * 3600_000
+    for (let t = start; t <= Date.now(); t += 3600_000) {
+      const key = toClickHouseDateTime(new Date(t))
+      out.push({ hour: new Date(t).toISOString(), count: byHour.get(key) ?? 0 })
+    }
+    return out
+  }
+
+  /** 页面维度 Vitals 分位（单查询 4 指标条件分位；TDigest 跳过 NULL） */
+  async performanceByPage(apikey: string, sinceMs: number): Promise<PagePerf[]> {
+    const since = toClickHouseDateTime(new Date(Date.now() - sinceMs))
+    const rs = await this.client.query({
+      query: `SELECT page,
+                count() AS samples,
+                quantileTDigest(0.75)(if(metric_name = 'largest-contentful-paint', metric_value, NULL)) AS lcp,
+                quantileTDigest(0.75)(if(metric_name = 'cumulative-layout-shift', metric_value, NULL)) AS cls,
+                quantileTDigest(0.75)(if(metric_name = 'interaction-to-next-paint', metric_value, NULL)) AS inp,
+                quantileTDigest(0.75)(if(metric_name = 'first-contentful-paint', metric_value, NULL)) AS fcp
+              FROM perf_events
+              WHERE apikey = {apikey:String} AND ts >= {since:DateTime}
+              GROUP BY page
+              ORDER BY samples DESC`,
+      query_params: { apikey, since },
+      format: 'JSONEachRow',
+    })
+    const rows = (await rs.json()) as Array<Record<string, unknown>>
+    return rows.map((r) => ({
+      page: String(r.page),
+      samples: Number(r.samples),
+      lcpP75: r.lcp === null ? null : Number(r.lcp),
+      clsP75: r.cls === null ? null : Number(r.cls),
+      inpP75: r.inp === null ? null : Number(r.inp),
+      fcpP75: r.fcp === null ? null : Number(r.fcp),
     }))
   }
 

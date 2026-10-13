@@ -30,6 +30,8 @@ export interface SourcemapArtifact {
 export interface ISourcemapArtifactStore {
   upsert(artifact: SourcemapArtifact): Promise<void>
   listByRelease(apikey: string, release: string): Promise<SourcemapArtifact[]>
+  /** 项目内全部工件（管理页列表；可选 release 过滤在服务层做） */
+  listAll(apikey: string): Promise<SourcemapArtifact[]>
   count(): Promise<number>
 }
 
@@ -47,6 +49,12 @@ export class MemorySourcemapArtifactStore implements ISourcemapArtifactStore {
 
   async count(): Promise<number> {
     return this.artifacts.size
+  }
+
+  async listAll(apikey: string): Promise<SourcemapArtifact[]> {
+    return [...this.artifacts.values()]
+      .filter((a) => a.apikey === apikey)
+      .sort((a, b) => b.uploadedAt - a.uploadedAt)
   }
 
   async listByRelease(apikey: string, release: string): Promise<SourcemapArtifact[]> {
@@ -85,6 +93,12 @@ export class SourcemapService {
 
   async count(): Promise<number> {
     return this.store.count()
+  }
+
+  /** 管理页列表（可按 release 过滤；按上传时间倒序） */
+  async listArtifacts(apikey: string, release?: string): Promise<SourcemapArtifact[]> {
+    const all = await this.store.listAll(apikey)
+    return release ? all.filter((a) => a.release === release) : all
   }
 
   /** release + url → 工件（精确 → 后缀） */

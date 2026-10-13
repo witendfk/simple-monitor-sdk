@@ -9,7 +9,7 @@
  * 「column is of type timestamptz but expression is of type text」。
  */
 import type { Pool } from 'pg'
-import type { IIssueStore, IssueUpsert } from '../issue-store'
+import type { IIssueStore, IssueStatus, IssueUpsert } from '../issue-store'
 
 export class PgIssueStore implements IIssueStore {
   constructor(private readonly pool: Pool) {}
@@ -36,6 +36,29 @@ export class PgIssueStore implements IIssueStore {
            first_release = COALESCE(issues.first_release, EXCLUDED.first_release)`,
       values
     )
+  }
+
+  async setStatus(apikey: string, fingerprint: string, status: IssueStatus): Promise<void> {
+    await this.pool.query(
+      `UPDATE issues i SET status = $3::text
+       FROM projects p
+       WHERE i.project_id = p.id AND p.public_key = $1 AND i.fingerprint = $2`,
+      [apikey, fingerprint, status]
+    )
+  }
+
+  async getStatuses(apikey: string, fingerprints: string[]): Promise<Map<string, IssueStatus>> {
+    if (fingerprints.length === 0) return new Map()
+    const values: unknown[] = [apikey]
+    const placeholders = fingerprints.map((fp, i) => `$${i + 2}`).join(', ')
+    values.push(...fingerprints)
+    const r = await this.pool.query(
+      `SELECT i.fingerprint, i.status
+       FROM issues i JOIN projects p ON p.id = i.project_id
+       WHERE p.public_key = $1 AND i.fingerprint IN (${placeholders})`,
+      values
+    )
+    return new Map(r.rows.map((row) => [row.fingerprint, row.status as IssueStatus]))
   }
 
   async reconcileCounts(

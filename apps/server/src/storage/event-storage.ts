@@ -33,6 +33,35 @@ export interface OverviewStats {
   topErrors: Array<{ fingerprint: string; type: string; message: string; count: number }>
 }
 
+/** 健康度扣分项（概览英雄卡） */
+export interface HealthDeduction {
+  domain: string
+  why: string
+  pts: number
+}
+
+export interface HealthScore {
+  score: number
+  tone: 'healthy' | 'watch' | 'poor'
+  deductions: HealthDeduction[]
+}
+
+/** 错误趋势小时桶（UTC） */
+export interface TrendBucket {
+  hour: string
+  count: number
+}
+
+/** 单页面 Vitals 分位（页面性能排行） */
+export interface PagePerf {
+  page: string
+  samples: number
+  lcpP75: number | null
+  clsP75: number | null
+  inpP75: number | null
+  fcpP75: number | null
+}
+
 export interface PerfQuantiles {
   metric: string
   count: number
@@ -84,4 +113,8 @@ export interface IEventStorage {
   recentBehaviors(apikey: string, limit: number): Promise<Array<Record<string, unknown>>>
   /** 指纹错误计数（M7.5 P1 Issue 对账的事实源：CH 为事件事实，PG 只存可变状态） */
   errorCountsByFingerprint(apikey: string, fingerprints: string[]): Promise<Map<string, number>>
+  /** 错误趋势：按小时桶升序（P5 概览趋势图；Memory 零填充 / CH GROUP BY hour） */
+  errorTrend(apikey: string, hours: number): Promise<TrendBucket[]>
+  /** 页面维度 Vitals 分位排行（P5 页面性能页 tabs/排行；LCP/CLS/INP/FCP ×page） */
+  performanceByPage(apikey: string, sinceMs: number): Promise<PagePerf[]>
 }

@@ -5,7 +5,7 @@
 import { Injectable } from '@nestjs/common'
 import type { NormalizedEvent } from '../ingest/normalize'
 import type { ErrorGroup, IEventStorage, OverviewStats, PerfQuantiles } from './event-storage'
-import { behaviorDetailFields } from './event-storage'
+import { behaviorDetailFields, type TrendBucket, type PagePerf } from './event-storage'
 
 const MAX_EVENTS = 50_000
 
@@ -144,6 +144,56 @@ export class MemoryStorage implements IEventStorage {
         page: e.page,
         ...behaviorDetailFields((e.behavior ?? {}) as Record<string, unknown>),
       }))
+  }
+
+  /** 错误趋势：按 UTC 小时桶现算（零填充到完整 hours 窗口） */
+  async errorTrend(apikey: string, hours: number): Promise<TrendBucket[]> {
+    const since = Date.now() - hours * 3600_000
+    const buckets = new Map<number, number>()
+    for (const e of this.events) {
+      if (e.apikey !== apikey || e.kind !== 'error') continue
+      const ts = e.ts.getTime()
+      if (ts < since) continue
+      const hour = Math.floor(ts / 3600_000) * 3600_000
+      buckets.set(hour, (buckets.get(hour) ?? 0) + 1)
+    }
+    const out: TrendBucket[] = []
+    for (let h = since; h <= Date.now(); h += 3600_000) {
+      out.push({ hour: new Date(h).toISOString(), count: buckets.get(h) ?? 0 })
+    }
+    return out
+  }
+
+  /** 页面维度 Vitals 分位（最近邻近似，与 CH quantileTDigest 语义对齐） */
+  async performanceByPage(apikey: string, sinceMs: number): Promise<PagePerf[]> {
+    const since = Date.now() - sinceMs
+    const byPage = new Map<string, Map<string, number[]>>()
+    for (const e of this.events) {
+      if (e.apikey !== apikey || e.kind !== 'perf' || e.ts.getTime() < since) continue
+      const metric = e.perf?.[0]
+      if (!metric) continue
+      const perMetric = byPage.get(e.page) ?? new Map()
+      byPage.set(e.page, perMetric)
+      const list = perMetric.get(metric.name) ?? []
+      list.push(metric.value)
+      perMetric.set(metric.name, list)
+    }
+    const quantile = (xs: number[], q: number): number | null => {
+      if (xs.length === 0) return null
+      const sorted = [...xs].sort((a, b) => a - b)
+      const idx = Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)
+      return Math.round(sorted[Math.max(0, idx)] * 100) / 100
+    }
+    return [...byPage.entries()]
+      .map(([page, perMetric]) => ({
+        page,
+        samples: [...perMetric.values()].reduce((s, xs) => s + xs.length, 0),
+        lcpP75: quantile(perMetric.get('largest-contentful-paint') ?? [], 0.75),
+        clsP75: quantile(perMetric.get('cumulative-layout-shift') ?? [], 0.75),
+        inpP75: quantile(perMetric.get('interaction-to-next-paint') ?? [], 0.75),
+        fcpP75: quantile(perMetric.get('first-contentful-paint') ?? [], 0.75),
+      }))
+      .sort((a, b) => b.samples - a.samples)
   }
 
   /** 指纹错误计数现算（Issue 对账的事实源，与 CH 聚合查询语义一致） */
