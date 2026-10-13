@@ -1,7 +1,7 @@
 /**
  * 告警规则 CRUD + 触发记录查询（看板告警页数据源）
  *
- * 鉴权（总纲 §3.7 P0-3/P0-6）：ApiKeyGuard 校验 x-api-key；规则归属鉴权项目
+ * 鉴权（M7.5 P3）：ManagementGuard 校验管理身份；规则归属鉴权项目
  * （body.apikey 忽略，防代建）；删除校验属主；webhookUrl 白名单防 SSRF。
  */
 import {
@@ -21,13 +21,11 @@ import {
 import type { Request } from 'express'
 import { z } from 'zod'
 import { CONFIG_TOKEN, type ServerConfig } from '../config'
-import { ApiKeyGuard } from '../auth/api-key.guard'
+import { ManagementGuard, type AuthedRequest } from '../auth/management.guard'
 import { ALERT_RULE_STORE_TOKEN, type IAlertRuleStore } from './rule-store'
 import { isSafeWebhookUrl } from './webhook-url'
 import type { AlertFire, AlertRule } from './alert.types'
 
-/** Guard 写入 req.apikey（见 api-key.guard.ts） */
-type AuthedRequest = Request & { apikey: string }
 
 const SpikeConfigSchema = z.object({
   windowMinutes: z.number().int().positive().max(1440).default(15),
@@ -78,7 +76,7 @@ function normalizeRule(
 }
 
 @Controller('api/alert-rules')
-@UseGuards(ApiKeyGuard)
+@UseGuards(ManagementGuard)
 export class AlertRulesController {
   /** class 型参数显式 @Inject（vitest esbuild 无 design:paramTypes 元数据——项目必查项） */
   constructor(
@@ -115,7 +113,7 @@ export class AlertRulesController {
 }
 
 @Controller('api/alert-fires')
-@UseGuards(ApiKeyGuard)
+@UseGuards(ManagementGuard)
 export class AlertFiresController {
   constructor(@Inject(ALERT_RULE_STORE_TOKEN) private readonly store: IAlertRuleStore) {}
 

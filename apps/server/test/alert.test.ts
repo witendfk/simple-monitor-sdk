@@ -200,6 +200,7 @@ describe('AlertEngine', () => {
 describe('告警规则 API', () => {
   let app: INestApplication
   let server: Server
+  let authCookie = ''
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -208,6 +209,12 @@ describe('告警规则 API', () => {
     app = moduleRef.createNestApplication()
     await app.init()
     server = app.getHttpServer()
+    // M7.5 P3：/api/** 走管理会话（默认种子管理员），公开 key 不再是通行证
+    const login = await request(server)
+      .post('/auth/login')
+      .send({ email: 'admin@demo.local', password: 'demo-password' })
+    expect(login.status).toBe(200)
+    authCookie = (login.headers['set-cookie'] as unknown as string[])[0].split(';')[0]
   }, 30_000)
 
   afterAll(async () => {
@@ -217,7 +224,7 @@ describe('告警规则 API', () => {
   it('创建 → 列表 → 删除 → 404', async () => {
     const created = await request(server)
       .post('/api/alert-rules')
-      .set('x-api-key', 'demo-key')
+      .set('Cookie', authCookie)
       .send({
         type: 'error_spike',
         name: 'e2e 规则',
@@ -229,12 +236,12 @@ describe('告警规则 API', () => {
     expect(created.status).toBe(201)
     const id = created.body.id as string
 
-    const list = await request(server).get('/api/alert-rules').set('x-api-key', 'demo-key')
+    const list = await request(server).get('/api/alert-rules').set('Cookie', authCookie)
     expect(list.body.some((r: { id: string }) => r.id === id)).toBe(true)
 
-    const del = await request(server).delete(`/api/alert-rules/${id}`).set('x-api-key', 'demo-key')
+    const del = await request(server).delete(`/api/alert-rules/${id}`).set('Cookie', authCookie)
     expect(del.status).toBe(200)
-    const gone = await request(server).delete(`/api/alert-rules/${id}`).set('x-api-key', 'demo-key')
+    const gone = await request(server).delete(`/api/alert-rules/${id}`).set('Cookie', authCookie)
     expect(gone.status).toBe(404)
   })
 
@@ -248,7 +255,7 @@ describe('告警规则 API', () => {
   it('非法 webhookUrl 被拒（协议白名单 + 非 URL 即 400）', async () => {
     const res = await request(server)
       .post('/api/alert-rules')
-      .set('x-api-key', 'demo-key')
+      .set('Cookie', authCookie)
       .send({
         type: 'perf_threshold',
         name: 'bad',
@@ -267,7 +274,7 @@ describe('告警规则 API', () => {
     ]) {
       const res = await request(server)
         .post('/api/alert-rules')
-        .set('x-api-key', 'demo-key')
+        .set('Cookie', authCookie)
         .send({
           type: 'perf_threshold',
           name: 'ssrf',
@@ -279,7 +286,7 @@ describe('告警规则 API', () => {
   })
 
   it('触发记录接口可查询', async () => {
-    const res = await request(server).get('/api/alert-fires?limit=10').set('x-api-key', 'demo-key')
+    const res = await request(server).get('/api/alert-fires?limit=10').set('Cookie', authCookie)
     expect(res.status).toBe(200)
     expect(Array.isArray(res.body)).toBe(true)
   })

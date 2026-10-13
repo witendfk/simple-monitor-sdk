@@ -1,7 +1,7 @@
 /**
  * 查询 API（看板数据源）：概览 / 错误组 / 错误详情 / 性能分位。
  * 只面向 IEventStorage 接口——内存与 ClickHouse 实现对查询方透明。
- * 鉴权（总纲 §3.7 P0-3/P0-4）：ApiKeyGuard + 全部查询按 req.apikey 隔离。
+ * 鉴权（M7.5 P3 权限分离）：ManagementGuard（会话/项目密钥双通道）+ 全部查询按 req.apikey 隔离。
  */
 import {
   BadRequestException,
@@ -21,17 +21,15 @@ import type { Request } from 'express'
 import { z } from 'zod'
 import { PROJECTS_TOKEN } from '../report/report.controller'
 import { ProjectsService } from '../projects/projects.service'
-import { ApiKeyGuard } from '../auth/api-key.guard'
+import { ManagementGuard, type AuthedRequest } from '../auth/management.guard'
 import { STORAGE_TOKEN, type IEventStorage } from '../storage/event-storage'
 import { SourcemapService } from '../ingest/sourcemap.service'
 
 /** class 型参数一律显式 @Inject（vitest esbuild 无 design:paramTypes 元数据） */
 
-/** Guard 写入 req.apikey（见 api-key.guard.ts） */
-type AuthedRequest = Request & { apikey: string }
 
 @Controller('api')
-@UseGuards(ApiKeyGuard)
+@UseGuards(ManagementGuard)
 export class QueryController {
   constructor(
     @Inject(STORAGE_TOKEN) private readonly storage: IEventStorage,

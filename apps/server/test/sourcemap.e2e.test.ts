@@ -27,6 +27,7 @@ const ORIGINAL_SOURCE = `export function checkoutSubmit(total: number): number {
 describe('SourceMap 符号化全链路', () => {
   let app: import('@nestjs/common').INestApplication
   let server: Server
+  let authCookie = ''
   let generatedJs: string
   let generatedMap: string
 
@@ -46,6 +47,9 @@ describe('SourceMap 符号化全链路', () => {
       .useValue({
         port: 0,
         webhookAllowPrivate: false,
+        sessionSecret: 'e2e-session-secret',
+        adminEmail: 'admin@e2e.local',
+        adminPassword: 'e2e-password',
         projectsJson: JSON.stringify([{ apikey: 'k', name: 't', rateLimitPerMin: 1000 }]),
       } satisfies ServerConfig)
       .compile()
@@ -54,6 +58,11 @@ describe('SourceMap 符号化全链路', () => {
     await app.init()
     app.get(IngestService).start()
     server = app.getHttpServer()
+    const login = await request(server)
+      .post('/auth/login')
+      .send({ email: 'admin@e2e.local', password: 'e2e-password' })
+    expect(login.status).toBe(200)
+    authCookie = (login.headers['set-cookie'] as unknown as string[])[0].split(';')[0]
   }, 30_000)
 
   afterAll(async () => {
@@ -63,7 +72,7 @@ describe('SourceMap 符号化全链路', () => {
   async function postJson(path: string, body: unknown): Promise<request.Response> {
     return request(server)
       .post(path)
-      .set('x-api-key', 'k')
+      .set('Cookie', authCookie)
       .send(body as object)
   }
 
@@ -109,7 +118,7 @@ describe('SourceMap 符号化全链路', () => {
     let groups: Array<{ fingerprint: string }> = []
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 100))
-      const list = await request(server).get('/api/errors?limit=10').set('x-api-key', 'k')
+      const list = await request(server).get('/api/errors?limit=10').set('Cookie', authCookie)
       if (list.body.length > 0) {
         groups = list.body
         break
@@ -120,7 +129,7 @@ describe('SourceMap 符号化全链路', () => {
     // 5. 详情：symbolicatedStack 含原始源码位置
     const detail = await request(server)
       .get(`/api/errors/${groups[0].fingerprint}`)
-      .set('x-api-key', 'k')
+      .set('Cookie', authCookie)
     expect(detail.status).toBe(200)
     const symbolicated = detail.body.symbolicatedStack?.[0]
     expect(symbolicated?.original).toBeTruthy()
@@ -150,7 +159,7 @@ describe('SourceMap 符号化全链路', () => {
     let fingerprint = ''
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 100))
-      const list = await request(server).get('/api/errors?limit=50').set('x-api-key', 'k')
+      const list = await request(server).get('/api/errors?limit=50').set('Cookie', authCookie)
       const group = (list.body as Array<{ message: string; fingerprint: string }>).find(
         (g) => g.message === 'no release no map'
       )
@@ -160,7 +169,7 @@ describe('SourceMap 符号化全链路', () => {
       }
     }
     expect(fingerprint).toBeTruthy()
-    const detail = await request(server).get(`/api/errors/${fingerprint}`).set('x-api-key', 'k')
+    const detail = await request(server).get(`/api/errors/${fingerprint}`).set('Cookie', authCookie)
     expect(detail.body.symbolicatedStack?.[0].original ?? null).toBeNull()
   })
 

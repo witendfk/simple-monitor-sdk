@@ -67,3 +67,5 @@ h4 { margin: 20px 0 8px; font-size: 14px; color: #4a5a6a; }
 
 .crumb-list { list-style: none; padding: 0; }
 .crumb-list li { padding: 6px 0; border-bottom: 1px dashed #e0e6ed; font-size: 13px; }
+
+/* 登录视图样式待设计定稿后落地（视觉稿：apps/dashboard/design/login-v1.html） */

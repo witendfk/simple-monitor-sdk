@@ -4,7 +4,7 @@
  * 未配置种子且表为空时落一个 demo 项目保底（零依赖演示语义不丢）。
  */
 import type { Pool } from 'pg'
-import type { IProjectStore, Project } from '../../projects/projects.service'
+import { hashSecretKey, type IProjectStore, type Project } from '../../projects/projects.service'
 
 export class PgProjectStore implements IProjectStore {
   constructor(private readonly pool: Pool) {}
@@ -21,6 +21,23 @@ export class PgProjectStore implements IProjectStore {
       `SELECT public_key, name, rate_limit_per_min, secret_key_hash
        FROM projects WHERE public_key = $1 LIMIT 1`,
       [apikey]
+    )
+    const row = r.rows[0]
+    if (!row) return undefined
+    return {
+      apikey: row.public_key,
+      name: row.name,
+      rateLimitPerMin: Number(row.rate_limit_per_min),
+      ...(row.secret_key_hash ? { secretKeyHash: row.secret_key_hash } : {}),
+    }
+  }
+
+  async findBySecretKey(secret: string): Promise<Project | undefined> {
+    // 哈希列等值查找：比较时序泄露不构成可利用侧信道（输入是摘要而非原文）
+    const r = await this.pool.query(
+      `SELECT public_key, name, rate_limit_per_min, secret_key_hash
+       FROM projects WHERE secret_key_hash = $1 LIMIT 1`,
+      [hashSecretKey(secret)]
     )
     const row = r.rows[0]
     if (!row) return undefined

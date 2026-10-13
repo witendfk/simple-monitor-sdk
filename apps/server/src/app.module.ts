@@ -13,6 +13,10 @@ import { FetchWebhookSender } from './alert/alert-engine'
 import { loadConfig, CONFIG_TOKEN, type ServerConfig } from './config'
 import { parseProjectsSeed, ProjectsService, type IProjectStore } from './projects/projects.service'
 import { PROJECTS_TOKEN } from './report/report.controller'
+import { USER_STORE_TOKEN, MemoryUserStore, type IUserStore } from './auth/user.store'
+import { PgUserStore } from './storage/pg/pg-user.store'
+import { AuthController } from './auth/auth.controller'
+import { hashPassword } from './auth/password'
 import { QUEUE_TOKEN, type IEventQueue } from './queue/event-queue'
 import { MemoryQueue } from './queue/memory.queue'
 import { RedisStreamQueue } from './queue/redis-stream.queue'
@@ -47,7 +51,13 @@ import { QueryController } from './query/query.controller'
 export const PG_POOL_TOKEN = 'PG_POOL'
 
 @Module({
-  controllers: [ReportController, QueryController, AlertRulesController, AlertFiresController],
+  controllers: [
+    ReportController,
+    QueryController,
+    AlertRulesController,
+    AlertFiresController,
+    AuthController,
+  ],
   providers: [
     { provide: CONFIG_TOKEN, useValue: loadConfig() },
     {
@@ -67,6 +77,45 @@ export const PG_POOL_TOKEN = 'PG_POOL'
         const seed = parseProjectsSeed(config.projectsJson)
         await store.ensureProjects(seed)
         if (seed.length === 0) await store.ensureDemoFallback()
+        return store
+      },
+    },
+    {
+      // 管理身份存储（M7.5 P3）：依赖 PROJECTS_TOKEN 保证项目种子先于成员绑定
+      provide: USER_STORE_TOKEN,
+      inject: [CONFIG_TOKEN, PG_POOL_TOKEN, PROJECTS_TOKEN],
+      useFactory: async (
+        config: ServerConfig,
+        pool: Pool | null,
+        _projects: IProjectStore
+      ): Promise<IUserStore> => {
+        const store = pool ? new PgUserStore(pool) : new MemoryUserStore(parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key')
+        const firstKey = parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key'
+        await store.ensureUser(
+          config.adminEmail ?? 'admin@demo.local',
+          hashPassword(config.adminPassword ?? 'demo-password')
+        )
+        await store.bindProjectByEmail(config.adminEmail ?? 'admin@demo.local', firstKey)
+        return store
+      },
+    },
+    {
+      // 管理身份存储（M7.5 P3）：依赖 PROJECTS_TOKEN 保证项目种子先于成员绑定
+      provide: USER_STORE_TOKEN,
+      inject: [CONFIG_TOKEN, PG_POOL_TOKEN, PROJECTS_TOKEN],
+      useFactory: async (
+        config: ServerConfig,
+        pool: Pool | null,
+        _projects: IProjectStore
+      ): Promise<IUserStore> => {
+        const firstKey =
+          parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key'
+        const store = pool ? new PgUserStore(pool) : new MemoryUserStore(firstKey)
+        await store.ensureUser(
+          config.adminEmail ?? 'admin@demo.local',
+          hashPassword(config.adminPassword ?? 'demo-password')
+        )
+        await store.bindProjectByEmail(config.adminEmail ?? 'admin@demo.local', firstKey)
         return store
       },
     },

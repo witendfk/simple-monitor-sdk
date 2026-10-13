@@ -48,6 +48,7 @@ const envelopeFixture = (): TransportEnvelope => ({
 describe('server e2e（内存全链路）', () => {
   let app: INestApplication
   let server: Server
+  let authCookie = ''
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -55,7 +56,12 @@ describe('server e2e（内存全链路）', () => {
       .useValue({
         port: 0,
         webhookAllowPrivate: false,
-        projectsJson: JSON.stringify([{ apikey: 'test-key', name: 'test', rateLimitPerMin: 3 }]),
+        sessionSecret: 'e2e-session-secret',
+        adminEmail: 'admin@e2e.local',
+        adminPassword: 'e2e-password',
+        projectsJson: JSON.stringify([
+          { apikey: 'test-key', name: 'test', rateLimitPerMin: 3, secretKey: 'e2e-project-secret' },
+        ]),
       } satisfies ServerConfig)
       .overrideProvider(ProjectsService)
       .useFactory({
@@ -72,6 +78,12 @@ describe('server e2e（内存全链路）', () => {
     // main.ts bootstrap 同款：启动消费循环（内存队列 50ms 泵）
     app.get(IngestService).start()
     server = app.getHttpServer()
+    // M7.5 P3：登录拿管理会话（后续 /api/** 全部走 cookie）
+    const login = await request(server)
+      .post('/auth/login')
+      .send({ email: 'admin@e2e.local', password: 'e2e-password' })
+    expect(login.status).toBe(200)
+    authCookie = (login.headers['set-cookie'] as unknown as string[])[0].split(';')[0]
   }, 30_000)
 
   afterAll(async () => {
@@ -88,9 +100,9 @@ describe('server e2e（内存全链路）', () => {
       await new Promise((r) => setTimeout(r, 100))
       const overview = await request(server)
         .get('/api/overview?sinceMinutes=60')
-        .set('x-api-key', 'test-key')
+        .set('Cookie', authCookie)
       if (overview.body.errorCount > 0) {
-        const list = await request(server).get('/api/errors?limit=10').set('x-api-key', 'test-key')
+        const list = await request(server).get('/api/errors?limit=10').set('Cookie', authCookie)
         groups = list.body
         break
       }
@@ -103,14 +115,14 @@ describe('server e2e（内存全链路）', () => {
     // 详情 API：指纹取回样本（含堆栈）
     const detail = await request(server)
       .get(`/api/errors/${groups[0].fingerprint}`)
-      .set('x-api-key', 'test-key')
+      .set('Cookie', authCookie)
     expect(detail.status).toBe(200)
     expect(detail.body.error?.stackFrames?.[0].line).toBe(42)
 
     // 性能分位
     const perf = await request(server)
       .get('/api/performance?metric=largest-contentful-paint&sinceMinutes=60')
-      .set('x-api-key', 'test-key')
+      .set('Cookie', authCookie)
     expect(perf.body.count).toBe(1)
     expect(perf.body.p75).toBe(2100)
   })
@@ -157,11 +169,24 @@ describe('server e2e（内存全链路）', () => {
     expect(res.body.error).toBe('decompressed body too large')
   })
 
-  it('/api/** 无鉴权头 → 401（查询端点不再匿名可读）', async () => {
-    const res = await request(server).get('/api/overview')
-    expect(res.status).toBe(401)
-    const badKey = await request(server).get('/api/overview').set('x-api-key', 'ghost')
-    expect(badKey.status).toBe(401)
+  it('/api/** 无鉴权 → 401；公开上报 key 无效；项目密钥通道可用（M7.5 P3 验收）', async () => {
+    // 无任何凭证
+    const anon = await request(server).get('/api/overview')
+    expect(anon.status).toBe(401)
+    // 公开上报 key 作为 x-api-key：P0 场景——必须被拒
+    const publicKey = await request(server).get('/api/overview').set('x-api-key', 'test-key')
+    expect(publicKey.status).toBe(401)
+    // 未知密钥
+    const badSecret = await request(server).get('/api/overview').set('x-api-key', 'ghost')
+    expect(badSecret.status).toBe(401)
+    // 通道一：项目密钥（CI/CLI 非交互）
+    const secretKey = await request(server).get('/api/overview').set('x-api-key', 'e2e-project-secret')
+    expect(secretKey.status).toBe(200)
+    // 错误密码登录 → 401
+    const badLogin = await request(server)
+      .post('/auth/login')
+      .send({ email: 'admin@e2e.local', password: 'wrong' })
+    expect(badLogin.status).toBe(401)
   })
 
   it('非法信封 → 400 带校验问题清单', async () => {

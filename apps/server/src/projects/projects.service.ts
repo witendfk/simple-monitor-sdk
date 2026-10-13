@@ -9,7 +9,7 @@
  * secretKeyHash 为管理身份 sha256——P1 仅落数据列，鉴权切换归 P3。
  */
 import { Injectable } from '@nestjs/common'
-import { createHash } from 'node:crypto'
+import { createHash, timingSafeEqual } from 'node:crypto'
 
 export interface Project {
   apikey: string
@@ -23,6 +23,15 @@ export interface Project {
 export interface IProjectStore {
   exists(apikey: string): Promise<boolean>
   get(apikey: string): Promise<Project | undefined>
+  /** 管理密钥校验（M7.5 P3 通道一）：secret → 项目；无匹配返回 undefined */
+  findBySecretKey(secret: string): Promise<Project | undefined>
+}
+
+/** 常时字符串比较（长度不等直接 false，等长走 timingSafeEqual 防时序侧信道） */
+export function timingSafeEqualStr(a: string, b: string): boolean {
+  const ba = Buffer.from(a)
+  const bb = Buffer.from(b)
+  return ba.length === bb.length && timingSafeEqual(ba, bb)
 }
 
 export function hashSecretKey(secret: string): string {
@@ -75,5 +84,13 @@ export class ProjectsService implements IProjectStore {
 
   async get(apikey: string): Promise<Project | undefined> {
     return this.byKey.get(apikey)
+  }
+
+  async findBySecretKey(secret: string): Promise<Project | undefined> {
+    const target = hashSecretKey(secret)
+    for (const p of this.byKey.values()) {
+      if (p.secretKeyHash && timingSafeEqualStr(p.secretKeyHash, target)) return p
+    }
+    return undefined
   }
 }

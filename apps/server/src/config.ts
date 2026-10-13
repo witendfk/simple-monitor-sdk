@@ -22,6 +22,10 @@ const ConfigSchema = z.object({
   projectsJson: z.string().optional(),
   /** 本地演示放开 webhook 私网/环回限制（SSRF 防护默认开） */
   webhookAllowPrivate: z.boolean().default(false),
+  /** 管理员种子与会话签名（M7.5 P3）：生产部署必须覆盖这三个默认值（server README 边界） */
+  adminEmail: z.string().email().default('admin@demo.local'),
+  adminPassword: z.string().min(1).default('demo-password'),
+  sessionSecret: z.string().min(1).default('dev-insecure-session-secret'),
 })
 
 export interface ServerConfig {
@@ -34,6 +38,10 @@ export interface ServerConfig {
   clickhousePassword?: string
   projectsJson?: string
   webhookAllowPrivate: boolean
+  /** 缺省 admin@demo.local / demo-password（zod default；测试可用 useValue 覆盖） */
+  adminEmail?: string
+  adminPassword?: string
+  sessionSecret?: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -46,6 +54,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     clickhousePassword: env.CLICKHOUSE_PASSWORD || '',
     projectsJson: env.PROJECTS_JSON || undefined,
     webhookAllowPrivate: env.WEBHOOK_ALLOW_PRIVATE === '1',
+    adminEmail: env.ADMIN_EMAIL || undefined,
+    adminPassword: env.ADMIN_PASSWORD || undefined,
+    sessionSecret: env.ADMIN_SESSION_SECRET || undefined,
   })
   return parsed
 }

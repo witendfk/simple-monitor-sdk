@@ -8,7 +8,7 @@
 
 | 维度         | 状态                                                                                                     |
 | ------------ | -------------------------------------------------------------------------------------------------------- |
-| 里程碑       | M0-M7 基础能力已落地；§3.3 修复清单收口（6/7，Memory 去重随 M7.5 P4）；M7.5 P1 前置/P1/P2 已完成；下一站 M7.5 P3 权限分离（P0）→ P4 gateway → P5 看板；手动 API/错误过滤/consent 已定档「M8 前小切片」 |
+| 里程碑       | M0-M7 基础能力已落地；§3.3 收口（6/7）；M7.5 P1 前置/P1/P2 已完成；**看板 UI 定稿**（NightOwl 暗色 21 页原型 = P5/M8/M9 的 UI 基准）；进行中 M7.5 P3 权限分离（server 侧已绿待收尾）→ P4 gateway → P5 按缺口清单实施；手动 API/错误过滤/consent 定档「M8 前小切片」 |
 | 测试         | 最近记录为 268 tests；CI 当前执行 typecheck×3 / lint / build / test / conformance，尚无 size 步骤        |
 | 需求基线     | [PRD](../PRD.md) v1.0.0；Web 核心产品为当前交付线，AI 与小程序不阻塞首发                                 |
 | 开放 P0      | 权限分离（§3.2，既有）——行为/API 隐私旁路与服务端二次脱敏已随 2026-10-10 批次闭合                        |
@@ -39,7 +39,13 @@
 - [x] **P2 CH 按 kind 分表**（2026-10-13）：DDL v2 四表（error_events 含 resource_kind 与 message 全量+message_head 冗余 / perf_events 行存 / behavior_events 含事件名·props·PV 来源 UTM·停留时长 / api_events 含 method·url·status·duration·trace_id）+ 四组物化视图（错误组 / perf_stats 含 release 维度 / pv_stats PV+trackerId UV / api_stats 计数+分位 state），替代 M4 单宽表；ClickHouseStorage 全量重写（saveBatch 按域分流写入、全部查询改读分表）。**明细完整性验收（equivalence 测试锁定）**：Memory 与 CH 经 behaviorDetailFields 同一规范映射，PV 来源/track 属性/停留时长/聚合计数/指纹对账全字段一致（CH 门控 5 测试）。**k6 实测**（生产构建）：100% 204 零丢失；2k 信封/s（=4k events/s）p95 4.8ms 达标，3k/s 起单进程事件循环饱和 p95 跳 145ms、5k/s p95 190ms——吞吐近达标、延迟待优化（限流+入队 pipeline 化 / consumer 独立进程，进 4.3）。附带修复三连：① server start 脚本路径错位（dist/src→rootDir=./src）；② server build 产物 ESM/CJS 与运行时不匹配（module=commonjs，应用单格式与发布包双格式策略区分）；③ types 包 build 脚本 `tsup && tsc` 的 tsc 无 emitDeclarationOnly，每次构建把 ESM 盖回 CJS 槽位（tsup clean+emitDeclarationOnly 修复，三包双格式产物核验归位）
 - [ ] **P3 权限分离**（= 下文 3.2，P0 消零）
 - [ ] **P4 gateway 加固**：先在 SPEC 定义稳定事件 ID、作用域与重试窗口，再实现幂等和令牌桶限流；MemoryStorage 的误去重先按 §3.3 修复。验收：同信封重放不重复计数；去重标记、CH 写入和 PG 更新之间任一步失败后可安全重试；限流语义单测
-- [ ] **P5 看板对齐**：4 分组页面（概览健康度英雄卡 + 5 域总结网格；错误 9 分类卡片 + 排行表 + 维度 tabs）。验收：对照 PRD §6 逐视图出数
+- [ ] **P5 看板对齐**：**UI 已定稿**（2026-10-13，apps/dashboard/design/ 登录+20 页高保真原型，NightOwl 品牌 + reui 暗色审美——实现照原型落，不再自行发挥）。按定稿 UI 逐页盘点的**服务端 API 缺口清单**：
+  - ✅ 已闭环：登录（P3 /auth/\*）· 告警规则+触发记录 · 异常分析主视图（/api/errors 分组+NEW 徽标）· 错误详情（堆栈+面包屑+请求上下文）
+  - ⚠️ P5 本体缺口（原 5 页的深化）：**健康度评分算法**（概览英雄卡核心，无后端）；**错误状态机 API**（PG issues 表有模型，缺 open/resolved/ignored 查询与流转端点）；**错误趋势序列**（按小时曲线端点）；**页面维度查询**（perf_events 有 page 列无查询——性能页 tabs/排行靠它）；**影响用户占比**（需总 UV 基数）；**Source Map 工件列表**查询
+  - ❌ M8 页面（UI 已定稿，等 API）：API 监控（调用量/成功率/分位/接口排行/失败样本+traceId）· 页面访问（PV/UV/来源/设备/页面TOP/utm 归因视图）· 静态资源（慢TOP/失败列表）
+  - ❌ M9 页面（UI 已定稿，等聚合查询）：事件分析（查询构建器：按事件/属性/页面聚合+趋势+TOP-N）· 事件详情（单事件属性分布+原始样本）· 漏斗（windowFunnel）· 留存（retention 矩阵+趋势）· 曝光
+  - ❌ 新发现的底层缺口：**log() 日志未落库**（自定义打点信封通道静默丢失，P2 挂账既有——日志查询页的前置）；**AI 诊断**（M10，设计演进：apiKey 由 env-only 改表单只写不读，需同步 ADR-9/DESIGN）
+  - 验收更新：对照 design/dashboard-v1.html 逐页出数（不再是 PRD §6 的粗粒度描述）
 
 ### 3.2 [ ] 独立切片：服务端权限分离（既有 P0）
 
