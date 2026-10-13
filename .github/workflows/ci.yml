@@ -83,7 +83,7 @@ jobs:
               auth: { apiKey: 'k', sdk: { name: 't', version: '0' } },
               session: { sessionId: 's', trackerId: 't' },
               context: { page: '/' },
-              events: [],
+              events: [{ kind: 'perf', metrics: [{ name: 'fp', value: 100 }] }],
             });
             assert(ok.success === true, '信封校验失效: ' + JSON.stringify(ok.error?.issues));
             console.log('node14-smoke OK @ node', process.version);
