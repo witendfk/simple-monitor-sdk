@@ -12,40 +12,40 @@ export const USER_STORE_TOKEN = 'USER_STORE'
 
 export interface IUserStore {
   /** 幂等种子：不存在则创建（已存在不覆盖密码——种子重跑不重置凭证） */
-  ensureUser(email: string, passwordHash: string): Promise<void>
-  /** 登录校验：成功返回用户 id；无此用户/密码错返回 null */
-  verifyLogin(email: string, password: string): Promise<number | null>
-  /** 用户邮箱（/auth/me 展示用） */
-  getEmail(uid: number): Promise<string | null>
+  ensureUser(account: string, passwordHash: string): Promise<void>
+  /** 登录校验：成功返回用户 id；无此账号/密码错返回 null */
+  verifyLogin(account: string, password: string): Promise<number | null>
+  /** 用户账号（/auth/me 展示用） */
+  getAccount(uid: number): Promise<string | null>
   /** 用户的管理范围项目（public_key）——取首个成员绑定；无绑定返回 null */
   getManagedProjectApiKey(uid: number): Promise<string | null>
   /** 种子后的成员绑定（幂等）：绑定用户与项目（项目不存在时静默跳过） */
-  bindProjectByEmail(email: string, apikey: string): Promise<void>
+  bindProjectByAccount(account: string, apikey: string): Promise<void>
 }
 
 @Injectable()
 export class MemoryUserStore implements IUserStore {
   private seq = 0
-  private readonly byEmail = new Map<string, { id: number; passwordHash: string }>()
+  private readonly byAccount = new Map<string, { id: number; passwordHash: string }>()
   private readonly membership = new Map<number, string>()
 
   constructor(private readonly fallbackProjectApiKey: string) {}
 
-  async ensureUser(email: string, passwordHash: string): Promise<void> {
-    if (!this.byEmail.has(email)) {
-      this.byEmail.set(email, { id: ++this.seq, passwordHash })
+  async ensureUser(account: string, passwordHash: string): Promise<void> {
+    if (!this.byAccount.has(account)) {
+      this.byAccount.set(account, { id: ++this.seq, passwordHash })
     }
   }
 
-  async verifyLogin(email: string, password: string): Promise<number | null> {
-    const user = this.byEmail.get(email)
+  async verifyLogin(account: string, password: string): Promise<number | null> {
+    const user = this.byAccount.get(account)
     if (!user || !verifyPassword(password, user.passwordHash)) return null
     return user.id
   }
 
-  async getEmail(uid: number): Promise<string | null> {
-    for (const [email, u] of this.byEmail) {
-      if (u.id === uid) return email
+  async getAccount(uid: number): Promise<string | null> {
+    for (const [account, u] of this.byAccount) {
+      if (u.id === uid) return account
     }
     return null
   }
@@ -54,8 +54,8 @@ export class MemoryUserStore implements IUserStore {
     return this.membership.get(uid) ?? this.fallbackProjectApiKey
   }
 
-  async bindProjectByEmail(email: string, apikey: string): Promise<void> {
-    const user = this.byEmail.get(email)
+  async bindProjectByAccount(account: string, apikey: string): Promise<void> {
+    const user = this.byAccount.get(account)
     if (user) this.membership.set(user.id, apikey)
   }
 }

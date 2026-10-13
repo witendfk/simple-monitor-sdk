@@ -68,4 +68,96 @@ h4 { margin: 20px 0 8px; font-size: 14px; color: #4a5a6a; }
 .crumb-list { list-style: none; padding: 0; }
 .crumb-list li { padding: 6px 0; border-bottom: 1px dashed #e0e6ed; font-size: 13px; }
 
-/* 登录视图样式待设计定稿后落地（视觉稿：apps/dashboard/design/login-v1.html） */
+/* ===== 登录视图（视觉稿 v2 定稿：暗色分屏） ===== */
+.login-shell {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  min-height: 100vh;
+  background: #09090b;
+  color: #fafafa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.003em;
+}
+.brand-pane {
+  position: relative;
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 40px 48px;
+  background:
+    radial-gradient(1200px 500px at -10% -20%, rgba(16, 185, 129, 0.08), transparent 60%),
+    radial-gradient(1000px 600px at 110% 120%, rgba(0, 113, 227, 0.07), transparent 60%),
+    #09090b;
+  border-right: 1px solid #1f1f23;
+  overflow: hidden;
+}
+.brand-row { display: flex; align-items: center; gap: 10px; }
+.brand-logo {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: #111113; border: 1px solid #27272a;
+  display: flex; align-items: center; justify-content: center; color: #fafafa;
+  flex-shrink: 0;
+}
+.brand-name { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.brand-hero { max-width: 460px; }
+.brand-hero h2 {
+  font-size: 28px; font-weight: 600; letter-spacing: -0.02em;
+  line-height: 1.25; margin: 0 0 12px;
+}
+.brand-hero h2 .dim { color: #a1a1aa; }
+.brand-points { display: flex; flex-direction: column; gap: 14px; margin-top: 24px; }
+.brand-point { display: flex; gap: 10px; align-items: flex-start; color: #a1a1aa; font-size: 13px; line-height: 1.5; }
+.brand-point .ico {
+  width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0;
+  background: #111113; border: 1px solid #27272a;
+  display: flex; align-items: center; justify-content: center; color: #fafafa;
+}
+.brand-footer { color: #71717a; font-size: 12px; display: flex; gap: 16px; }
+.brand-footer .dot-sep { color: #27272a; }
+.form-pane { display: flex; align-items: center; justify-content: center; padding: 40px 48px; }
+.login-col { width: 100%; max-width: 340px; }
+.login-title { font-size: 20px; font-weight: 600; letter-spacing: -0.015em; margin: 0 0 6px; }
+.login-sub { color: #a1a1aa; font-size: 13px; margin: 0 0 26px; }
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 12px; color: #a1a1aa; margin-bottom: 7px; }
+.input-wrap { position: relative; }
+.input-wrap .lead-icon {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  color: #71717a; display: flex;
+}
+.input-wrap input {
+  width: 100%; height: 42px;
+  padding: 0 12px 0 36px;
+  font-size: 14px; color: #fafafa;
+  background: #0e0e10;
+  border: 1px solid #27272a;
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-wrap input::placeholder { color: #71717a; }
+.input-wrap input:focus { border-color: #3f3f46; box-shadow: 0 0 0 3px rgba(250, 250, 250, 0.06); }
+.login-col.is-error .input-wrap input { border-color: rgba(248, 113, 113, 0.4); box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.08); }
+.btn-primary {
+  width: 100%; height: 42px; margin-top: 8px;
+  background: #fafafa; color: #09090b;
+  border: none; border-radius: 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-primary:hover { background: #e4e4e7; }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
+.form-error {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 8px; padding: 9px 11px;
+  margin-top: 14px;
+}
+.form-hint { text-align: center; color: #71717a; font-size: 12px; margin: 20px 0 0; }
+@media (max-width: 900px) {
+  .login-shell { grid-template-columns: 1fr; }
+  .brand-pane { display: none; }
+}
+/* ===== 登录样式结束 ===== */
+

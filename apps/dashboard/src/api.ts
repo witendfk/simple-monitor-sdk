@@ -24,18 +24,18 @@ function handleAuth(res: Response): Response {
 }
 
 export const authApi = {
-  login: async (email: string, password: string): Promise<void> => {
+  login: async (account: string, password: string): Promise<void> => {
     const res = await fetch('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ account, password }),
     })
-    if (!res.ok) throw new Error('邮箱或密码错误')
+    if (!res.ok) throw new Error('账号或密码错误')
   },
   logout: (): Promise<void> => fetch('/auth/logout', { method: 'POST' }).then(() => undefined),
-  me: async (): Promise<{ email: string; apikey: string }> => {
+  me: async (): Promise<{ account: string; apikey: string }> => {
     const res = await fetch(`${BASE.replace('/api', '')}/auth/me`).then(handleAuth)
-    return (await res.json()) as { email: string; apikey: string }
+    return (await res.json()) as { account: string; apikey: string }
   },
 }
 

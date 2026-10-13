@@ -9,27 +9,27 @@ import { verifyPassword } from '../../auth/password'
 export class PgUserStore implements IUserStore {
   constructor(private readonly pool: Pool) {}
 
-  async ensureUser(email: string, passwordHash: string): Promise<void> {
+  async ensureUser(account: string, passwordHash: string): Promise<void> {
     await this.pool.query(
-      `INSERT INTO users (email, password_hash) VALUES ($1, $2)
-       ON CONFLICT (email) DO NOTHING`,
-      [email, passwordHash]
+      `INSERT INTO users (account, password_hash) VALUES ($1, $2)
+       ON CONFLICT (account) DO NOTHING`,
+      [account, passwordHash]
     )
   }
 
-  async verifyLogin(email: string, password: string): Promise<number | null> {
+  async verifyLogin(account: string, password: string): Promise<number | null> {
     const r = await this.pool.query(
-      'SELECT id, password_hash FROM users WHERE email = $1 LIMIT 1',
-      [email]
+      'SELECT id, password_hash FROM users WHERE account = $1 LIMIT 1',
+      [account]
     )
     const row = r.rows[0]
     if (!row || !verifyPassword(password, row.password_hash)) return null
     return Number(row.id)
   }
 
-  async getEmail(uid: number): Promise<string | null> {
-    const r = await this.pool.query('SELECT email FROM users WHERE id = $1 LIMIT 1', [uid])
-    return r.rows[0]?.email ?? null
+  async getAccount(uid: number): Promise<string | null> {
+    const r = await this.pool.query('SELECT account FROM users WHERE id = $1 LIMIT 1', [uid])
+    return r.rows[0]?.account ?? null
   }
 
   async getManagedProjectApiKey(uid: number): Promise<string | null> {
@@ -43,14 +43,14 @@ export class PgUserStore implements IUserStore {
     return r.rows[0]?.public_key ?? null
   }
 
-  async bindProjectByEmail(email: string, apikey: string): Promise<void> {
+  async bindProjectByAccount(account: string, apikey: string): Promise<void> {
     await this.pool.query(
       `INSERT INTO project_members (project_id, user_id, role)
        SELECT p.id, u.id, 'owner'
        FROM projects p, users u
-       WHERE p.public_key = $2 AND u.email = $1
+       WHERE p.public_key = $2 AND u.account = $1
        ON CONFLICT (project_id, user_id) DO NOTHING`,
-      [email, apikey]
+      [account, apikey]
     )
   }
 }

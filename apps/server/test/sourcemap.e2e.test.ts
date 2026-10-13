@@ -48,7 +48,7 @@ describe('SourceMap 符号化全链路', () => {
         port: 0,
         webhookAllowPrivate: false,
         sessionSecret: 'e2e-session-secret',
-        adminEmail: 'admin@e2e.local',
+        adminAccount: 'admin',
         adminPassword: 'e2e-password',
         projectsJson: JSON.stringify([{ apikey: 'k', name: 't', rateLimitPerMin: 1000 }]),
       } satisfies ServerConfig)
@@ -60,7 +60,7 @@ describe('SourceMap 符号化全链路', () => {
     server = app.getHttpServer()
     const login = await request(server)
       .post('/auth/login')
-      .send({ email: 'admin@e2e.local', password: 'e2e-password' })
+      .send({ account: 'admin', password: 'e2e-password' })
     expect(login.status).toBe(200)
     authCookie = (login.headers['set-cookie'] as unknown as string[])[0].split(';')[0]
   }, 30_000)

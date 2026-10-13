@@ -24,10 +24,10 @@ import { CONFIG_TOKEN, type ServerConfig } from '../config'
 
 export const MANAGEMENT_GUARD_TOKEN = 'MANAGEMENT_GUARD'
 
-/** Guard 写入：req.apikey 数据隔离键；req.authEmail 操作者标识（审计/展示） */
+/** Guard 写入：req.apikey 数据隔离键；req.authAccount 操作者标识（审计/展示） */
 export interface AuthedRequest extends Request {
   apikey: string
-  authEmail: string
+  authAccount: string
 }
 
 /** class 型参数一律显式 @Inject（vitest esbuild 无 design:paramTypes 元数据） */
@@ -51,7 +51,7 @@ export class ManagementGuard implements CanActivate {
         throw new UnauthorizedException({ error: 'invalid credential' })
       }
       authed.apikey = project.apikey
-      authed.authEmail = 'secret-key'
+      authed.authAccount = 'secret-key'
       return true
     }
 
@@ -63,7 +63,7 @@ export class ManagementGuard implements CanActivate {
         const apikey = await this.users.getManagedProjectApiKey(uid)
         if (apikey && (await this.projects.exists(apikey))) {
           authed.apikey = apikey
-          authed.authEmail = (await this.users.getEmail(uid)) ?? `uid:${uid}`
+          authed.authAccount = (await this.users.getAccount(uid)) ?? `uid:${uid}`
           return true
         }
       }

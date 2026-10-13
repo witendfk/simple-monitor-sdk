@@ -18,7 +18,6 @@ import type { Request } from 'express'
 import { z } from 'zod'
 import { CONFIG_TOKEN, type ServerConfig } from '../config'
 import { USER_STORE_TOKEN, type IUserStore } from './user.store'
-import { hashPassword } from './password'
 import {
   clearSessionCookieHeader,
   readCookie,
@@ -30,7 +29,7 @@ import {
 import { ManagementGuard } from './management.guard'
 
 const LoginSchema = z.object({
-  email: z.string().email().max(254),
+  account: z.string().min(1).max(64),
   password: z.string().min(1).max(1024),
 })
 
@@ -39,7 +38,7 @@ const LOCK_MS = 15 * 60_000
 
 @Controller('auth')
 export class AuthController {
-  /** 失败计数：key = email（登录接口无会话，按账号锁而非按 IP——防分布式撞库同一账号） */
+  /** 失败计数：key = account（登录接口无会话，按账号锁而非按 IP——防分布式撞库同一账号） */
   private readonly fails = new Map<string, { count: number; lockedUntil: number }>()
 
   constructor(
@@ -49,32 +48,32 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(200)
-  async login(@Req() req: Request, @Body() body: unknown): Promise<{ ok: true; email: string }> {
+  async login(@Req() req: Request, @Body() body: unknown): Promise<{ ok: true; account: string }> {
     const parsed = LoginSchema.safeParse(body)
     if (!parsed.success) {
       throw new UnauthorizedException({ error: 'invalid credentials' })
     }
-    const { email, password } = parsed.data
+    const { account, password } = parsed.data
 
-    const lock = this.fails.get(email)
+    const lock = this.fails.get(account)
     if (lock && lock.lockedUntil > Date.now()) {
       throw new UnauthorizedException({ error: 'too many attempts, try later' })
     }
 
-    const uid = await this.users.verifyLogin(email, password)
+    const uid = await this.users.verifyLogin(account, password)
     if (uid === null) {
       const count = (lock?.count ?? 0) + 1
-      this.fails.set(email, {
+      this.fails.set(account, {
         count,
         lockedUntil: count >= MAX_FAILS ? Date.now() + LOCK_MS : 0,
       })
       throw new UnauthorizedException({ error: 'invalid credentials' })
     }
-    this.fails.delete(email)
+    this.fails.delete(account)
 
     const token = signSession(uid, this.config.sessionSecret ?? '')
     req.res?.setHeader('Set-Cookie', sessionCookieHeader(token))
-    return { ok: true, email }
+    return { ok: true, account }
   }
 
   @Post('logout')
@@ -87,9 +86,9 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(ManagementGuard)
-  me(@Req() req: Request): { email: string; apikey: string } {
-    const authed = req as Request & { apikey: string; authEmail: string }
-    return { email: authed.authEmail, apikey: authed.apikey }
+  me(@Req() req: Request): { account: string; apikey: string } {
+    const authed = req as Request & { apikey: string; authAccount: string }
+    return { account: authed.authAccount, apikey: authed.apikey }
   }
 
   /** 会话令牌自检（无 guard：仅校验签名与过期，供前端区分「未登录」与「登录过期」） */
@@ -98,13 +97,5 @@ export class AuthController {
     const token = readCookie(req, SESSION_COOKIE)
     const uid = token ? verifySession(token, this.config.sessionSecret ?? '') : null
     return { valid: uid !== null }
-  }
-
-  /** 凭证种子（app.module 工厂调用一次）：ADMIN_EMAIL/PASSWORD env 幂等入库 */
-  async seedAdmin(): Promise<void> {
-    const email = this.config.adminEmail
-    const password = this.config.adminPassword
-    if (!email || !password) return
-    await this.users.ensureUser(email, hashPassword(password))
   }
 }

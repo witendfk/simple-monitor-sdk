@@ -5,7 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS users (
     id            BIGSERIAL PRIMARY KEY,
-    email         TEXT UNIQUE NOT NULL,
+    account       TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     display_name  TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()

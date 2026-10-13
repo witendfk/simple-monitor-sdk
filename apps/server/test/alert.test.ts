@@ -212,7 +212,7 @@ describe('告警规则 API', () => {
     // M7.5 P3：/api/** 走管理会话（默认种子管理员），公开 key 不再是通行证
     const login = await request(server)
       .post('/auth/login')
-      .send({ email: 'admin@demo.local', password: 'demo-password' })
+      .send({ account: 'admin', password: 'demo-password' })
     expect(login.status).toBe(200)
     authCookie = (login.headers['set-cookie'] as unknown as string[])[0].split(';')[0]
   }, 30_000)

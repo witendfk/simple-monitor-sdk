@@ -94,10 +94,10 @@ export const PG_POOL_TOKEN = 'PG_POOL'
           : new MemoryUserStore(parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key')
         const firstKey = parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key'
         await store.ensureUser(
-          config.adminEmail ?? 'admin@demo.local',
+          config.adminAccount ?? 'admin',
           hashPassword(config.adminPassword ?? 'demo-password')
         )
-        await store.bindProjectByEmail(config.adminEmail ?? 'admin@demo.local', firstKey)
+        await store.bindProjectByAccount(config.adminAccount ?? 'admin', firstKey)
         return store
       },
     },
@@ -113,10 +113,10 @@ export const PG_POOL_TOKEN = 'PG_POOL'
         const firstKey = parseProjectsSeed(config.projectsJson)[0]?.apikey ?? 'demo-key'
         const store = pool ? new PgUserStore(pool) : new MemoryUserStore(firstKey)
         await store.ensureUser(
-          config.adminEmail ?? 'admin@demo.local',
+          config.adminAccount ?? 'admin',
           hashPassword(config.adminPassword ?? 'demo-password')
         )
-        await store.bindProjectByEmail(config.adminEmail ?? 'admin@demo.local', firstKey)
+        await store.bindProjectByAccount(config.adminAccount ?? 'admin', firstKey)
         return store
       },
     },

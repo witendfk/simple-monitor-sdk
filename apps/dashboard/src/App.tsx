@@ -18,7 +18,7 @@ export default function App() {
   const [fingerprint, setFingerprint] = useState<string | null>(null)
   // 登录态：mount 时 /auth/me 校验会话；任意 401（含会话过期）回落登录视图
   const [authState, setAuthState] = useState<'checking' | 'anon' | 'authed'>('checking')
-  const [me, setMe] = useState<{ email: string } | null>(null)
+  const [me, setMe] = useState<{ account: string } | null>(null)
 
   useEffect(() => {
     authApi
@@ -100,7 +100,7 @@ export default function App() {
           ))}
         </nav>
         <span className="muted">
-          10s 自动刷新 · {new Date().toLocaleTimeString()} · {me?.email ?? ''}{' '}
+          10s 自动刷新 · {new Date().toLocaleTimeString()} · {me?.account ?? ''}{' '}
           <button
             className="link-btn"
             onClick={() => {

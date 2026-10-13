@@ -57,7 +57,7 @@ describe('server e2e（内存全链路）', () => {
         port: 0,
         webhookAllowPrivate: false,
         sessionSecret: 'e2e-session-secret',
-        adminEmail: 'admin@e2e.local',
+        adminAccount: 'admin',
         adminPassword: 'e2e-password',
         projectsJson: JSON.stringify([
           { apikey: 'test-key', name: 'test', rateLimitPerMin: 3, secretKey: 'e2e-project-secret' },
@@ -81,7 +81,7 @@ describe('server e2e（内存全链路）', () => {
     // M7.5 P3：登录拿管理会话（后续 /api/** 全部走 cookie）
     const login = await request(server)
       .post('/auth/login')
-      .send({ email: 'admin@e2e.local', password: 'e2e-password' })
+      .send({ account: 'admin', password: 'e2e-password' })
     expect(login.status).toBe(200)
     authCookie = (login.headers['set-cookie'] as unknown as string[])[0].split(';')[0]
   }, 30_000)
